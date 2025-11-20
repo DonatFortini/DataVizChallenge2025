@@ -1,28 +1,24 @@
 import type * as GeoJSON from 'geojson';
 
-// Canonical runtime shape for all features
-type BaseFeature<P, G extends GeoJSON.Geometry> = {
-    properties: P;
+type NormalizedProperties = {
+    nom?: string;
+    categorie?: string;
+    commune?: string;
+    coordonnees?: string;
+    [key: string]: unknown;
+};
+
+
+type FeatureWithCoordinates<G extends GeoJSON.Geometry = GeoJSON.Geometry> = {
+    properties: NormalizedProperties;
     geometry: G;
-    // normalized coordinates (center or point) to avoid re-computing
     coordinates: Cooridinates;
 };
 
-type Commune = BaseFeature<{ nom: string }, GeoJSON.MultiPolygon>;
-type SportObject = BaseFeature<{ nom: string; profession: string }, GeoJSON.MultiPolygon>;
-
-interface CommonPointProps {
-    nom: string;
-    profession: string;
-    adresse: string;
-    commune: string;
-}
-
-type EduObject = BaseFeature<CommonPointProps, GeoJSON.Point>;
-type MedicalObject = BaseFeature<CommonPointProps, GeoJSON.Point>;
+type Commune = FeatureWithCoordinates<GeoJSON.MultiPolygon | GeoJSON.Polygon>;
 
 type GeojsonFeature = GeoJSON.Feature<GeoJSON.Geometry, Record<string, unknown>>;
-type GeojsonFetchResponse = Commune | SportObject | EduObject | MedicalObject;
+type GeojsonFetchResponse = FeatureWithCoordinates;
 
 class Cooridinates {
     latitude: number;  // degrees
@@ -95,11 +91,10 @@ class Cooridinates {
 
 export { Cooridinates };
 export type {
+    NormalizedProperties,
+    FeatureWithCoordinates,
     GeojsonFeature,
     GeojsonFetchResponse,
     Commune,
-    SportObject,
-    CommonPointProps,
-    EduObject,
-    MedicalObject
+    NormalizedProperties as FeatureProperties
 };

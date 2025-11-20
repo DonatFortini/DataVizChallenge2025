@@ -48,8 +48,8 @@ export function Sidebar({ baseLambert, error, status, commune, datasets, hasBase
 function CommuneCard({ commune }: { commune: Commune }) {
     return (
         <div className="commune-card">
-            <h2>{(commune.properties as any)?.nom_commune ?? commune.properties?.nom ?? 'Commune'}</h2>
-            <p className="muted">Commune sélectionnée : {(commune.properties as any)?.nom_commune ?? commune.properties?.nom ?? 'N/A'}</p>
+            <h2>{commune.properties?.nom ?? (commune.properties as any)?.nom_commune ?? 'Commune'}</h2>
+            <p className="muted">Commune sélectionnée : {commune.properties?.nom ?? 'N/A'}</p>
         </div>
     );
 }
@@ -82,13 +82,15 @@ function DatasetSection({ datasetKey, data, hasBase, onToggle }: DatasetSectionP
                         {data.items.map((item, idx) => {
                             const props: any = item.properties ?? {};
                             const communeName = props.commune ?? props.nom_commune;
+                            const title = props.nom ?? communeName ?? 'Objet';
+                            const subtitle = props.categorie ?? props.profession;
                             return (
                                 <li key={idx} className="list-item">
                                     <span className="color-dot" style={{ background: data.colors[idx] ?? '#22c55e' }} />
                                     <div className="list-text">
-                                        <strong>{props.nom ?? communeName ?? 'Objet'}</strong>
-                                        {props.profession && (
-                                            <div className="muted">{props.profession}</div>
+                                        <strong>{title}</strong>
+                                        {subtitle && (
+                                            <div className="muted">{subtitle}</div>
                                         )}
                                         {communeName && (
                                             <span className="muted"> — {communeName}</span>

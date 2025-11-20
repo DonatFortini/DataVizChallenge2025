@@ -1,5 +1,5 @@
 import type * as GeoJSON from 'geojson';
-import { type GeojsonFetchResponse, Cooridinates, type Commune, type GeojsonFeature } from './types';
+import { type GeojsonFetchResponse, Cooridinates, type Commune, type GeojsonFeature, type FeatureWithCoordinates, type NormalizedProperties } from './types';
 const geojsonCache = new Map<string, any>();
 
 const BASE_URL = (import.meta as any).env?.BASE_URL ?? '/';
@@ -38,11 +38,37 @@ async function fetchGeojsonData(fileName: string): Promise<GeojsonFetchResponse[
         const geometry = useLambert ? convertGeometryToWGS(f.geometry) : f.geometry;
         const coords = normalizeToCoordinates(geometry);
         return {
-            properties: f.properties ?? {},
+            properties: normalizeProperties(f.properties),
             geometry,
             coordinates: coords,
-        } as GeojsonFetchResponse;
+        } as FeatureWithCoordinates;
     });
+}
+
+function normalizeProperties(props: Record<string, unknown> | undefined): NormalizedProperties {
+    const nom = pickStringValue(props, ['Nom', 'nom', 'nom_commune', 'name']);
+    const categorie = pickStringValue(props, ['Categorie', 'categorie', 'profession']);
+    const commune = pickStringValue(props, ['Commune', 'commune', 'nom_commune']);
+    const coordonnees = pickStringValue(props, ['Coordonnees', 'Coordonnées', 'coordonnees']);
+
+    return {
+        ...(props ?? {}),
+        nom: nom ?? undefined,
+        categorie: categorie ?? undefined,
+        commune: commune ?? undefined,
+        coordonnees: coordonnees ?? undefined
+    };
+}
+
+function pickStringValue(props: Record<string, unknown> | undefined, keys: string[]): string | undefined {
+    if (!props) return undefined;
+    for (const key of keys) {
+        const val = props[key];
+        if (typeof val === 'string' && val.trim().length > 0) {
+            return val;
+        }
+    }
+    return undefined;
 }
 
 export async function isInCorsica(point: Cooridinates): Promise<boolean> {
