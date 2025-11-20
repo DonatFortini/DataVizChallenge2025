@@ -307,10 +307,12 @@ function lambertPointFromGPS(point: Cooridinates): Cooridinates {
     return new Cooridinates(y, x);
 }
 
-
-async function neibouringCommunes(commune: Commune): Promise<Commune[]> {
-    return closestTo(getMultipolygonCenter(commune), 'communes') as Promise<Commune[]>;
+export function featureKey(feature: GeojsonFetchResponse): string {
+    const nom = (feature as any).properties?.nom ?? (feature as any).properties?.Nom ?? 'item';
+    const { latitude, longitude } = feature.coordinates;
+    return `${nom}:${latitude.toFixed(6)},${longitude.toFixed(6)}`;
 }
+
 
 type IsochroneOptions = { paddingKm?: number };
 
@@ -370,44 +372,46 @@ function circlePolygon(center: Cooridinates, radiusKm: number): GeoJSON.Polygon 
     return { type: 'Polygon', coordinates: [coords] };
 }
 
-export async function closestObjectsToBase(base: Cooridinates, object_type: 'sport' | 'etude' | 'sante'): Promise<GeojsonFetchResponse[]> {
+type ClosestResult = { items: GeojsonFetchResponse[]; categories: string[] };
+
+export async function closestObjectsToBase(base: Cooridinates, object_type: 'sport' | 'etude' | 'sante', categoryFilter?: string): Promise<ClosestResult> {
     const dataset = object_type === 'sport' ? 'sport' : object_type === 'etude' ? 'etude' : 'sante';
 
     const startCommune = await closestCommune(base) as Commune;
-    if (!startCommune) return [];
+    if (!startCommune) return { items: [], categories: [] };
 
     const allObjects = await fetchGeojsonData(dataset);
+    const categories = Array.from(new Set(
+        allObjects
+            .map(o => (o.properties?.categorie ?? '') as string)
+            .filter(c => typeof c === 'string' && c.trim().length > 0)
+            .map(c => c.trim())
+    )).sort((a, b) => a.localeCompare(b));
 
-    const seen = new Set<string>();
-    const results: GeojsonFetchResponse[] = [];
-    const visited = new Set<string>();
-    const queue: Commune[] = [startCommune];
-    const startKey = (startCommune as any).properties?.nom ?? JSON.stringify(startCommune.properties ?? startCommune);
-    visited.add(startKey);
+    const normalizedFilter = categoryFilter?.toLowerCase().trim();
+    const filteredObjects = normalizedFilter
+        ? allObjects.filter(o => (o.properties?.categorie ?? '').toString().toLowerCase().trim() === normalizedFilter)
+        : allObjects;
 
-    while (queue.length > 0 && results.length < 10) {
-        const c = queue.shift()!;
-        const center = getMultipolygonCenter(c);
-        const candidates = allObjects
-            .map(o => ({ o, dist: haversineDistance(center, o.coordinates) }))
-            .sort((a, b) => a.dist - b.dist);
-
-        for (const { o } of candidates) {
-            if (results.length >= 10) break;
-            const key = `${(o as any).properties?.nom ?? ''}:${(o.coordinates.latitude).toFixed(6)},${(o.coordinates.longitude).toFixed(6)}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            results.push(o);
-        }
-
-        const neigh = await neibouringCommunes(c);
-        for (const n of neigh) {
-            const nKey = (n as any).properties?.nom ?? JSON.stringify(n.properties ?? n);
-            if (visited.has(nKey)) continue;
-            visited.add(nKey);
-            queue.push(n);
-        }
+    const deduped: GeojsonFetchResponse[] = [];
+    const seenKeys = new Set<string>();
+    for (const obj of filteredObjects) {
+        const key = featureKey(obj);
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        deduped.push(obj);
     }
 
-    return results.slice(0, 10);
+    if (deduped.length === 0) {
+        return { items: [], categories };
+    }
+
+    // Sort globally by distance to the selected base and keep up to 10.
+    const sorted = [...deduped]
+        .map(o => ({ o, dist: haversineDistance(base, o.coordinates) }))
+        .sort((a, b) => a.dist - b.dist)
+        .slice(0, 10)
+        .map(({ o }) => o);
+
+    return { items: sorted, categories };
 }

@@ -6,7 +6,7 @@ import './App.css';
 import { MapView, type MarkerInfo } from './components/MapView';
 import { Sidebar } from './components/Sidebar';
 import { type DatasetKey, type DatasetState, initialDatasetState } from './core/datasets';
-import { closestCommune, closestObjectsToBase, computeIsochrone, isInCorsica } from './core/engine';
+import { closestCommune, closestObjectsToBase, computeIsochrone, featureKey, isInCorsica } from './core/engine';
 import { Cooridinates, type Commune, type GeojsonFetchResponse } from './core/types';
 
 const palette = ['#22c55e', '#a855f7', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#6366f1', '#14b8a6'];
@@ -29,6 +29,7 @@ function App() {
     const [commune, setCommune] = useState<Commune | null>(null);
     const [datasets, setDatasets] = useState<Record<DatasetKey, DatasetState>>(initialDatasetState);
     const [status, setStatus] = useState<string | null>(null);
+    const [isochrone, setIsochrone] = useState<GeoJSONType.Polygon | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const corsicaCenter: [number, number] = [42.0396, 9.0129];
@@ -37,7 +38,46 @@ function App() {
         setCommune(null);
         setBase(null);
         setBaseLambert(null);
+        setIsochrone(null);
         setDatasets(initialDatasetState());
+    }, []);
+
+    const loadDataset = useCallback(async (key: DatasetKey, category: string, coords: Cooridinates) => {
+        setDatasets(prev => ({
+            ...prev,
+            [key]: {
+                ...prev[key],
+                loading: true,
+                error: null,
+                selectedCategory: category,
+                items: [],
+                colors: [],
+                selectedItems: {},
+                selectedColors: {}
+            }
+        }));
+        const filter = category === 'all' ? undefined : category;
+        try {
+            const { items, categories } = await closestObjectsToBase(coords, key, filter);
+            const colors = generateColors(items.length);
+            setDatasets(prev => ({
+                ...prev,
+                [key]: {
+                    ...prev[key],
+                    loading: false,
+                    items,
+                    colors,
+                    categories,
+                    selectedCategory: category,
+                    error: null
+                }
+            }));
+        } catch (e: any) {
+            setDatasets(prev => ({
+                ...prev,
+                [key]: { ...prev[key], loading: false, error: e?.message ?? 'Erreur de chargement' }
+            }));
+        }
     }, []);
 
     const handleMapClick = useCallback(async (coords: Cooridinates) => {
@@ -65,66 +105,59 @@ function App() {
 
             setBase(coords);
             setCommune(foundCommune);
-            setDatasets(initialDatasetState());
+            setIsochrone(null);
+            setStatus('Chargement des données à proximité...');
+
+            await Promise.all((['etude', 'sante', 'sport'] as DatasetKey[])
+                .map(key => loadDataset(key, 'all', coords)));
+
             setStatus(null);
         } catch (e: any) {
             setStatus(null);
             setError(e?.message ?? 'Erreur lors de la récupération des données.');
         }
-    }, [resetSelections]);
+    }, [loadDataset, resetSelections]);
 
-    const toggleCategory = async (key: DatasetKey) => {
+    const handleCategoryChange = async (key: DatasetKey, category: string) => {
         if (!base) return;
-        const current = datasets[key];
-        const nextChecked = !current.checked;
+        setIsochrone(null);
+        await loadDataset(key, category, base);
+    };
 
+    const toggleItemSelection = (datasetKey: DatasetKey, item: GeojsonFetchResponse) => {
+        setIsochrone(null);
+        const itemKey = featureKey(item);
         setDatasets(prev => {
-            const updated: Record<DatasetKey, DatasetState> = { ...prev } as any;
-            (Object.keys(updated) as DatasetKey[]).forEach(k => {
-                if (k === key) {
-                    updated[k] = { ...updated[k], checked: nextChecked, error: null };
-                } else {
-                    updated[k] = { ...updated[k], checked: false, isoLoading: false };
-                }
-            });
-            return updated;
-        });
-
-        if (!nextChecked) return;
-
-        setDatasets(prev => ({
-            ...prev,
-            [key]: { ...prev[key], loading: prev[key].items.length === 0, isoLoading: true, error: null }
-        }));
-
-        try {
-            let items = current.items;
-            if (items.length === 0) {
-                items = await closestObjectsToBase(base, key) as GeojsonFetchResponse[];
+            const current = prev[datasetKey];
+            const selectedItems = { ...current.selectedItems };
+            const selectedColors = { ...current.selectedColors };
+            if (selectedItems[itemKey]) {
+                delete selectedItems[itemKey];
+                delete selectedColors[itemKey];
+            } else {
+                selectedItems[itemKey] = item;
+                const idx = current.items.findIndex(i => featureKey(i) === itemKey);
+                const color = selectedColors[itemKey] ?? current.colors[idx] ?? randomColor();
+                selectedColors[itemKey] = color;
             }
-            const colors = current.colors.length === items.length && current.colors.length > 0
-                ? current.colors
-                : generateColors(items.length);
-            const dominant = colors[0] ?? '#22d3ee';
-            const isochrone = computeIsochrone(base, items.map(i => i.coordinates), { paddingKm: 1 });
-            setDatasets(prev => ({
+            return {
                 ...prev,
-                [key]: {
-                    ...prev[key],
-                    loading: false,
-                    isoLoading: false,
-                    items,
-                    colors,
-                    color: dominant,
-                    isochrone
+                [datasetKey]: {
+                    ...current,
+                    selectedItems,
+                    selectedColors
                 }
-            }));
-        } catch (e: any) {
-            setDatasets(prev => ({
-                ...prev,
-                [key]: { ...prev[key], loading: false, isoLoading: false, error: e?.message ?? 'Erreur de chargement' }
-            }));
-        }
+            };
+        });
+    };
+
+    const generateIsochroneFromSelection = () => {
+        if (!base) return;
+        const selectedPoints = (Object.keys(datasets) as DatasetKey[])
+            .flatMap(k => Object.values(datasets[k].selectedItems));
+        if (selectedPoints.length === 0) return;
+        const iso = computeIsochrone(base, selectedPoints.map(i => i.coordinates), { paddingKm: 1 });
+        setIsochrone(iso);
     };
 
     const communeFeature = useMemo(() => {
@@ -138,21 +171,27 @@ function App() {
 
     const markerPositions = useMemo<MarkerInfo[]>(() => {
         return (Object.keys(datasets) as DatasetKey[])
-            .filter(k => datasets[k].checked)
-            .flatMap(k => datasets[k].items.map((item, idx) => ({
-                position: [item.coordinates.latitude, item.coordinates.longitude] as [number, number],
-                color: datasets[k].colors[idx] ?? randomColor()
-            })));
+            .flatMap(k => {
+                const ds = datasets[k];
+                return Object.entries(ds.selectedItems).map(([key, item]) => ({
+                    position: [item.coordinates.latitude, item.coordinates.longitude] as [number, number],
+                    color: ds.selectedColors[key] ?? randomColor()
+                }));
+            });
     }, [datasets]);
 
     const isochroneFeatures = useMemo(() => {
+        if (!isochrone) return [];
+        return [{
+            type: 'Feature',
+            properties: { color: '#f97316' },
+            geometry: isochrone
+        }] as GeoJSONType.Feature[];
+    }, [isochrone]);
+
+    const selectedCount = useMemo(() => {
         return (Object.keys(datasets) as DatasetKey[])
-            .filter(k => datasets[k].checked && datasets[k].isochrone)
-            .map(k => ({
-                type: 'Feature',
-                properties: { category: k, color: datasets[k].color ?? '#f97316' },
-                geometry: datasets[k].isochrone!
-            }) as GeoJSONType.Feature);
+            .reduce((acc, key) => acc + Object.keys(datasets[key].selectedItems).length, 0);
     }, [datasets]);
 
     return (
@@ -174,7 +213,11 @@ function App() {
                 commune={commune}
                 datasets={datasets}
                 hasBase={Boolean(base)}
-                onToggleCategory={toggleCategory}
+                onSelectCategory={handleCategoryChange}
+                onToggleItem={toggleItemSelection}
+                onGenerateIsochrone={generateIsochroneFromSelection}
+                canGenerate={Boolean(base) && selectedCount > 0}
+                selectionCount={selectedCount}
             />
         </div>
     );

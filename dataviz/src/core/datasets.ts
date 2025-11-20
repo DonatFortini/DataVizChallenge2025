@@ -1,17 +1,15 @@
-import type * as GeoJSONType from 'geojson';
-
 import type { GeojsonFetchResponse } from './types';
 
 export type DatasetKey = 'etude' | 'sante' | 'sport';
 
 export type DatasetState = {
-    checked: boolean;
     loading: boolean;
-    isoLoading: boolean;
     items: GeojsonFetchResponse[];
     colors: string[];
-    isochrone?: GeoJSONType.Polygon;
-    color?: string;
+    categories: string[];
+    selectedCategory: string;
+    selectedItems: Record<string, GeojsonFetchResponse>;
+    selectedColors: Record<string, string>;
     error?: string | null;
 };
 
@@ -22,7 +20,7 @@ export const labelMap: Record<DatasetKey, string> = {
 };
 
 export const initialDatasetState = (): Record<DatasetKey, DatasetState> => ({
-    etude: { checked: false, loading: false, isoLoading: false, items: [], colors: [], isochrone: undefined, error: null },
-    sante: { checked: false, loading: false, isoLoading: false, items: [], colors: [], isochrone: undefined, error: null },
-    sport: { checked: false, loading: false, isoLoading: false, items: [], colors: [], isochrone: undefined, error: null }
+    etude: { loading: false, items: [], colors: [], categories: [], selectedCategory: 'all', selectedItems: {}, selectedColors: {}, error: null },
+    sante: { loading: false, items: [], colors: [], categories: [], selectedCategory: 'all', selectedItems: {}, selectedColors: {}, error: null },
+    sport: { loading: false, items: [], colors: [], categories: [], selectedCategory: 'all', selectedItems: {}, selectedColors: {}, error: null }
 });

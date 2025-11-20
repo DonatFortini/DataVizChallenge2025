@@ -1,6 +1,7 @@
-import type { Commune } from '../core/types';
+import type { Commune, GeojsonFetchResponse } from '../core/types';
 import type { DatasetKey, DatasetState } from '../core/datasets';
 import { labelMap } from '../core/datasets';
+import { featureKey } from '../core/engine';
 
 type SidebarProps = {
     baseLambert: { x: number; y: number } | null;
@@ -9,10 +10,26 @@ type SidebarProps = {
     commune: Commune | null;
     datasets: Record<DatasetKey, DatasetState>;
     hasBase: boolean;
-    onToggleCategory: (key: DatasetKey) => void;
+    onSelectCategory: (key: DatasetKey, category: string) => void;
+    onToggleItem: (key: DatasetKey, item: GeojsonFetchResponse) => void;
+    onGenerateIsochrone: () => void;
+    canGenerate: boolean;
+    selectionCount: number;
 };
 
-export function Sidebar({ baseLambert, error, status, commune, datasets, hasBase, onToggleCategory }: SidebarProps) {
+export function Sidebar({
+    baseLambert,
+    error,
+    status,
+    commune,
+    datasets,
+    hasBase,
+    onSelectCategory,
+    onToggleItem,
+    onGenerateIsochrone,
+    canGenerate,
+    selectionCount
+}: SidebarProps) {
     return (
         <div className="sidebar">
             <header>
@@ -34,9 +51,19 @@ export function Sidebar({ baseLambert, error, status, commune, datasets, hasBase
                         datasetKey={key}
                         data={datasets[key]}
                         hasBase={hasBase}
-                        onToggle={onToggleCategory}
+                        onSelectCategory={onSelectCategory}
+                        onToggleItem={onToggleItem}
                     />
                 ))}
+            </div>
+            <div className="section">
+                <button
+                    className="btn full"
+                    onClick={onGenerateIsochrone}
+                    disabled={!canGenerate}
+                >
+                    Générer la carte ({selectionCount} sélectionnés)
+                </button>
             </div>
             <footer className="footer">
                 <span>Théo N&apos;Guyen et Donat Fortini — 2025 challenge dataviz</span>
@@ -58,51 +85,63 @@ type DatasetSectionProps = {
     datasetKey: DatasetKey;
     data: DatasetState;
     hasBase: boolean;
-    onToggle: (key: DatasetKey) => void;
+    onSelectCategory: (key: DatasetKey, category: string) => void;
+    onToggleItem: (key: DatasetKey, item: GeojsonFetchResponse) => void;
 };
 
-function DatasetSection({ datasetKey, data, hasBase, onToggle }: DatasetSectionProps) {
+function DatasetSection({ datasetKey, data, hasBase, onSelectCategory, onToggleItem }: DatasetSectionProps) {
+    const categories = ['all', ...data.categories];
     return (
         <div className="section">
-            <label className="section-header">
-                <input
-                    type="checkbox"
-                    checked={data.checked}
-                    onChange={() => onToggle(datasetKey)}
-                    disabled={!hasBase}
-                />
+            <div className="section-header">
                 <span>{labelMap[datasetKey]}</span>
-            </label>
-            {data.checked && (
-                <div className="section-body">
-                    {data.loading && <p className="small">Chargement...</p>}
-                    {data.error && <p className="small error-text">{data.error}</p>}
-                    {!data.loading && data.items.length === 0 && <p className="small">Aucun objet trouvé.</p>}
-                    <ul>
-                        {data.items.map((item, idx) => {
-                            const props: any = item.properties ?? {};
-                            const communeName = props.commune ?? props.nom_commune;
-                            const title = props.nom ?? communeName ?? 'Objet';
-                            const subtitle = props.categorie ?? props.profession;
-                            return (
-                                <li key={idx} className="list-item">
-                                    <span className="color-dot" style={{ background: data.colors[idx] ?? '#22c55e' }} />
-                                    <div className="list-text">
-                                        <strong>{title}</strong>
-                                        {subtitle && (
-                                            <div className="muted">{subtitle}</div>
-                                        )}
-                                        {communeName && (
-                                            <span className="muted"> — {communeName}</span>
-                                        )}
-                                    </div>
-                                </li>
-                            );
-                        })}
-                    </ul>
-                    {data.isoLoading && <p className="small">Calcul de l’isochrone...</p>}
-                </div>
-            )}
+                <select
+                    value={data.selectedCategory}
+                    onChange={(e) => onSelectCategory(datasetKey, e.target.value)}
+                    disabled={!hasBase || data.loading}
+                >
+                    {categories.map(cat => (
+                        <option key={cat} value={cat}>{cat === 'all' ? 'Toutes les catégories' : cat}</option>
+                    ))}
+                </select>
+            </div>
+            <div className="section-body">
+                {!hasBase && <p className="small">Cliquez sur la carte pour commencer.</p>}
+                {hasBase && data.loading && <p className="small">Chargement...</p>}
+                {hasBase && data.error && <p className="small error-text">{data.error}</p>}
+                {hasBase && !data.loading && data.items.length === 0 && <p className="small">Aucun objet trouvé.</p>}
+                <ul>
+                    {data.items.map((item, idx) => {
+                        const props: any = item.properties ?? {};
+                        const communeName = props.commune ?? props.nom_commune;
+                        const title = props.nom ?? communeName ?? 'Objet';
+                        const subtitle = props.categorie ?? props.profession;
+                        const key = featureKey(item);
+                        const selected = Boolean(data.selectedItems[key]);
+                        const color = data.selectedColors[key] ?? data.colors[idx] ?? '#22c55e';
+                        return (
+                            <li key={key} className="list-item">
+                                <input
+                                    type="checkbox"
+                                    checked={selected}
+                                    onChange={() => onToggleItem(datasetKey, item)}
+                                    disabled={!hasBase}
+                                />
+                                <span className="color-dot" style={{ background: color }} />
+                                <div className="list-text">
+                                    <strong>{title}</strong>
+                                    {subtitle && (
+                                        <div className="muted">{subtitle}</div>
+                                    )}
+                                    {communeName && (
+                                        <span className="muted"> — {communeName}</span>
+                                    )}
+                                </div>
+                            </li>
+                        );
+                    })}
+                </ul>
+            </div>
         </div>
     );
 }
