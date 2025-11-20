@@ -59,6 +59,10 @@ Faire des cartes isochrones "à la volée"
     [Liste des établissements scolaires en Corse — data.corsica](https://www.data.corsica/explore/dataset/liste-des-etablissements-scolaire-corse-en-2024/information/?disjunctive.epci&disjunctive.type_etabl)  
     Données : écoles, collèges, lycées, adresses et attributs administratifs.
 
+- Équipements sportifs et lieux de pratique — Corse  
+    [Recensement des équipements sportifs et lieux de pratique en Corse — data.corsica](https://www.data.corsica/explore/dataset/data-es-recensement-des-equipements-sportifs-et-lieux-de-pratique-complet/export/?location=10,42.10137,9.13307)
+    Données : localisation et types d'équipements sportifs.
+
 - Altimétrie (MNT) — RGE ALTI  
     [RGE ALTI (MNT) — géoservices IGN](https://geoservices.ign.fr/rgealti)  
     Modèle numérique de terrain de référence, utile pour visualisation 3D et calculs de distances / pentes.
