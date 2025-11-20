@@ -6,7 +6,7 @@ import './App.css';
 import { MapView, type MarkerInfo } from './components/MapView';
 import { Sidebar } from './components/Sidebar';
 import { type DatasetKey, type DatasetState, initialDatasetState } from './core/datasets';
-import { closestCommune, closestObjectsToBase, computeIsochrone, featureKey, isInCorsica } from './core/engine';
+import { closestCommune, closestObjectsToBase, computeIsochrone, computeAnamorphicCommunes, featureKey, isInCorsica } from './core/engine';
 import { Cooridinates, type Commune, type GeojsonFetchResponse } from './core/types';
 
 const palette = ['#22c55e', '#a855f7', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#6366f1', '#14b8a6'];
@@ -30,6 +30,7 @@ function App() {
     const [datasets, setDatasets] = useState<Record<DatasetKey, DatasetState>>(initialDatasetState);
     const [status, setStatus] = useState<string | null>(null);
     const [isochrone, setIsochrone] = useState<GeoJSONType.Polygon | null>(null);
+    const [anamorphic, setAnamorphic] = useState<GeoJSONType.Feature[] | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const corsicaCenter: [number, number] = [42.0396, 9.0129];
@@ -39,6 +40,7 @@ function App() {
         setBase(null);
         setBaseLambert(null);
         setIsochrone(null);
+        setAnamorphic(null);
         setDatasets(initialDatasetState());
     }, []);
 
@@ -49,11 +51,7 @@ function App() {
                 ...prev[key],
                 loading: true,
                 error: null,
-                selectedCategory: category,
-                items: [],
-                colors: [],
-                selectedItems: {},
-                selectedColors: {}
+                selectedCategory: category
             }
         }));
         const filter = category === 'all' ? undefined : category;
@@ -151,13 +149,15 @@ function App() {
         });
     };
 
-    const generateIsochroneFromSelection = () => {
+    const generateIsochroneFromSelection = async () => {
         if (!base) return;
         const selectedPoints = (Object.keys(datasets) as DatasetKey[])
             .flatMap(k => Object.values(datasets[k].selectedItems));
         if (selectedPoints.length === 0) return;
         const iso = computeIsochrone(base, selectedPoints.map(i => i.coordinates), { paddingKm: 1 });
         setIsochrone(iso);
+        const distorted = await computeAnamorphicCommunes(selectedPoints);
+        setAnamorphic(distorted);
     };
 
     const communeFeature = useMemo(() => {
@@ -201,6 +201,7 @@ function App() {
                     base={base}
                     communeFeature={communeFeature}
                     isochroneFeatures={isochroneFeatures}
+                    anamorphicFeatures={anamorphic ?? []}
                     markerPositions={markerPositions}
                     corsicaCenter={corsicaCenter}
                     onSelect={handleMapClick}

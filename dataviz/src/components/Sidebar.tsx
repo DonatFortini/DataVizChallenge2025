@@ -12,7 +12,7 @@ type SidebarProps = {
     hasBase: boolean;
     onSelectCategory: (key: DatasetKey, category: string) => void;
     onToggleItem: (key: DatasetKey, item: GeojsonFetchResponse) => void;
-    onGenerateIsochrone: () => void;
+    onGenerateIsochrone: () => void | Promise<void>;
     canGenerate: boolean;
     selectionCount: number;
 };

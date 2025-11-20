@@ -1,4 +1,6 @@
 import type * as GeoJSON from 'geojson';
+import { buffer, convex, featureCollection, point, transformScale } from '@turf/turf';
+import * as d3 from 'd3';
 import { type GeojsonFetchResponse, Cooridinates, type Commune, type GeojsonFeature, type FeatureWithCoordinates, type NormalizedProperties } from './types';
 const geojsonCache = new Map<string, any>();
 
@@ -317,59 +319,31 @@ export function featureKey(feature: GeojsonFetchResponse): string {
 type IsochroneOptions = { paddingKm?: number };
 
 export function computeIsochrone(base: Cooridinates, targets: Cooridinates[], opts: IsochroneOptions = {}): GeoJSON.Polygon {
-    const points = [base, ...targets];
     const padding = opts.paddingKm ?? 1;
-
-    if (points.length < 3) {
-        const maxDist = Math.max(...targets.map(t => haversineDistance(base, t)), padding);
-        return circlePolygon(base, maxDist + padding);
+    const pts = [point([base.longitude, base.latitude]), ...targets.map(t => point([t.longitude, t.latitude]))];
+    if (pts.length === 1) {
+        const b = buffer(pts[0], padding, { units: 'kilometers' });
+        const geom = (b && 'geometry' in b && (b as any).geometry) ? (b as any).geometry : null;
+        return (geom ?? { type: 'Polygon', coordinates: [[]] }) as GeoJSON.Polygon;
     }
 
-    const hull = convexHull(points.map(p => ({ x: p.longitude, y: p.latitude })));
-    const ring = hull.map(p => [p.x, p.y]);
-    if (ring.length === 0) return circlePolygon(base, padding);
-    ring.push(ring[0]);
-    return { type: 'Polygon', coordinates: [ring] };
-}
-
-function convexHull(points: { x: number; y: number }[]): { x: number; y: number }[] {
-    if (points.length <= 1) return points;
-    const sorted = [...points].sort((a, b) => a.x === b.x ? a.y - b.y : a.x - b.x);
-
-    const cross = (o: any, a: any, b: any) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-    const lower: any[] = [];
-    for (const p of sorted) {
-        while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
-            lower.pop();
-        }
-        lower.push(p);
+    const fc = featureCollection(pts);
+    const hull = convex(fc);
+    const hullGeom = hull ? (hull as any).geometry as GeoJSON.Polygon | GeoJSON.MultiPolygon | undefined : undefined;
+    if (!hullGeom) {
+        const fallback = buffer(pts[0], padding, { units: 'kilometers' });
+        const fbGeom = (fallback && 'geometry' in fallback && (fallback as any).geometry) ? (fallback as any).geometry : null;
+        return (fbGeom ?? { type: 'Polygon', coordinates: [[]] }) as GeoJSON.Polygon;
     }
-    const upper: any[] = [];
-    for (let i = sorted.length - 1; i >= 0; i--) {
-        const p = sorted[i];
-        while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
-            upper.pop();
-        }
-        upper.push(p);
+    const expanded = buffer({ type: 'Feature', properties: {}, geometry: hullGeom } as any, padding, { units: 'kilometers' });
+    const expGeom = (expanded && 'geometry' in expanded && (expanded as any).geometry) ? (expanded as any).geometry as GeoJSON.Polygon : null;
+    if (expGeom && Array.isArray((expGeom as any).coordinates)) {
+        return expGeom;
     }
-    upper.pop();
-    lower.pop();
-    return lower.concat(upper);
-}
-
-function circlePolygon(center: Cooridinates, radiusKm: number): GeoJSON.Polygon {
-    const steps = 64;
-    const coords: number[][] = [];
-    const latRad = toRad(center.latitude);
-    const lonRad = toRad(center.longitude);
-    const angDist = radiusKm / 6371;
-    for (let i = 0; i <= steps; i++) {
-        const theta = 2 * Math.PI * (i / steps);
-        const lat = Math.asin(Math.sin(latRad) * Math.cos(angDist) + Math.cos(latRad) * Math.sin(angDist) * Math.cos(theta));
-        const lon = lonRad + Math.atan2(Math.sin(theta) * Math.sin(angDist) * Math.cos(latRad), Math.cos(angDist) - Math.sin(latRad) * Math.sin(lat));
-        coords.push([lon * 180 / Math.PI, lat * 180 / Math.PI]);
+    if (Array.isArray((hullGeom as any).coordinates)) {
+        return hullGeom as GeoJSON.Polygon;
     }
-    return { type: 'Polygon', coordinates: [coords] };
+    return { type: 'Polygon', coordinates: [[]] };
 }
 
 type ClosestResult = { items: GeojsonFetchResponse[]; categories: string[] };
@@ -406,7 +380,6 @@ export async function closestObjectsToBase(base: Cooridinates, object_type: 'spo
         return { items: [], categories };
     }
 
-    // Sort globally by distance to the selected base and keep up to 10.
     const sorted = [...deduped]
         .map(o => ({ o, dist: haversineDistance(base, o.coordinates) }))
         .sort((a, b) => a.dist - b.dist)
@@ -414,4 +387,35 @@ export async function closestObjectsToBase(base: Cooridinates, object_type: 'spo
         .map(({ o }) => o);
 
     return { items: sorted, categories };
+}
+
+export async function computeAnamorphicCommunes(objects: GeojsonFetchResponse[]): Promise<GeoJSON.Feature[]> {
+    if (objects.length === 0) return [];
+    const communes = await fetchGeojsonData('communes');
+    if (!communes || communes.length === 0) return [];
+
+    const distances = communes.map(c => {
+        const center = getMultipolygonCenter(c as Commune);
+        const nearest = Math.min(...objects.map(o => haversineDistance(center, o.coordinates)));
+        return { commune: c as Commune, dist: nearest, center };
+    });
+
+    const minDist = Math.min(...distances.map(d => d.dist));
+    const maxDist = Math.max(...distances.map(d => d.dist));
+    const scale = maxDist === minDist
+        ? () => 1.0
+        : d3.scalePow().exponent(0.6).domain([minDist, maxDist]).range([0.6, 2.4]);
+
+    const distorted: GeoJSON.Feature[] = [];
+    for (const { commune, dist } of distances) {
+        const geom = (commune as any).geometry as GeoJSON.Polygon | GeoJSON.MultiPolygon;
+        if (!geom) continue;
+        const center = getMultipolygonCenter(commune);
+        const scaleFactor = scale(dist);
+        const origin: [number, number] = [center.longitude, center.latitude];
+        const scaled = transformScale({ type: 'Feature', properties: { ...commune.properties, dist }, geometry: geom }, scaleFactor, { origin }) as GeoJSON.Feature;
+        distorted.push(scaled);
+    }
+
+    return distorted;
 }

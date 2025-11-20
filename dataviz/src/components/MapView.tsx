@@ -38,6 +38,7 @@ type MapViewProps = {
     base: Cooridinates | null;
     communeFeature: GeoJSONType.Feature | null;
     isochroneFeatures: GeoJSONType.Feature[];
+    anamorphicFeatures: GeoJSONType.Feature[];
     markerPositions: MarkerInfo[];
     corsicaCenter: [number, number];
     onSelect: (coords: Cooridinates) => void;
@@ -47,6 +48,7 @@ export function MapView({
     base,
     communeFeature,
     isochroneFeatures,
+    anamorphicFeatures,
     markerPositions,
     corsicaCenter,
     onSelect
@@ -60,6 +62,13 @@ export function MapView({
             <ClickHandler onSelect={onSelect} />
             {communeFeature && (
                 <GeoJSON key={`${communeFeature.properties?.nom ?? 'commune'}`} data={communeFeature} style={{ color: '#2563eb', weight: 2 }} />
+            )}
+            {anamorphicFeatures.length > 0 && (
+                <GeoJSON
+                    key="anamorphic"
+                    data={{ type: 'FeatureCollection', features: anamorphicFeatures } as any}
+                    style={{ color: '#a855f7', weight: 1, fillOpacity: 0.08 }}
+                />
             )}
             {isochroneFeatures.map((feat, idx) => (
                 <GeoJSON
