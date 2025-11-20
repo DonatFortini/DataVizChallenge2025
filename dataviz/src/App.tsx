@@ -6,7 +6,7 @@ import './App.css';
 import { MapView, type MarkerInfo } from './components/MapView';
 import { Sidebar } from './components/Sidebar';
 import { type DatasetKey, type DatasetState, initialDatasetState } from './core/datasets';
-import { closestCommune, closestObjectsToBase, computeIsochrone, computeAnamorphicCommunes, featureKey, isInCorsica } from './core/engine';
+import { closestCommune, closestObjectsToBase, computeIsochrone, computeCommuneDistances, featureKey, isInCorsica, type CommuneDistanceChoropleth } from './core/engine';
 import { Cooridinates, type Commune, type GeojsonFetchResponse } from './core/types';
 
 const palette = ['#22c55e', '#a855f7', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#6366f1', '#14b8a6'];
@@ -23,6 +23,15 @@ const generateColors = (count: number): string[] => {
 
 const randomColor = () => palette[Math.floor(Math.random() * palette.length)];
 
+const choroplethColors = ['#15803d', '#4ade80', '#f59e0b', '#f97316', '#ef4444'];
+
+const computeBreaks = (values: number[]): number[] => {
+    if (values.length === 0) return [];
+    const sorted = [...values].sort((a, b) => a - b);
+    const pick = (p: number) => sorted[Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1)))];
+    return [pick(0.25), pick(0.5), pick(0.75), sorted[sorted.length - 1]];
+};
+
 function App() {
     const [base, setBase] = useState<Cooridinates | null>(null);
     const [baseLambert, setBaseLambert] = useState<{ x: number; y: number } | null>(null);
@@ -30,7 +39,8 @@ function App() {
     const [datasets, setDatasets] = useState<Record<DatasetKey, DatasetState>>(initialDatasetState);
     const [status, setStatus] = useState<string | null>(null);
     const [isochrone, setIsochrone] = useState<GeoJSONType.Polygon | null>(null);
-    const [anamorphic, setAnamorphic] = useState<GeoJSONType.Feature[] | null>(null);
+    const [choropleth, setChoropleth] = useState<GeoJSONType.Feature[] | null>(null);
+    const [choroplethBreaks, setChoroplethBreaks] = useState<number[]>([]);
     const [error, setError] = useState<string | null>(null);
 
     const corsicaCenter: [number, number] = [42.0396, 9.0129];
@@ -40,7 +50,8 @@ function App() {
         setBase(null);
         setBaseLambert(null);
         setIsochrone(null);
-        setAnamorphic(null);
+        setChoropleth(null);
+        setChoroplethBreaks([]);
         setDatasets(initialDatasetState());
     }, []);
 
@@ -156,8 +167,9 @@ function App() {
         if (selectedPoints.length === 0) return;
         const iso = computeIsochrone(base, selectedPoints.map(i => i.coordinates), { paddingKm: 1 });
         setIsochrone(iso);
-        const distorted = await computeAnamorphicCommunes(selectedPoints);
-        setAnamorphic(distorted);
+        const distFeatures: CommuneDistanceChoropleth[] = await computeCommuneDistances(selectedPoints);
+        setChoropleth(distFeatures.map(d => d.feature));
+        setChoroplethBreaks(computeBreaks(distFeatures.map(d => d.dist)));
     };
 
     const communeFeature = useMemo(() => {
@@ -201,7 +213,9 @@ function App() {
                     base={base}
                     communeFeature={communeFeature}
                     isochroneFeatures={isochroneFeatures}
-                    anamorphicFeatures={anamorphic ?? []}
+                    choroplethFeatures={choropleth ?? []}
+                    choroplethBreaks={choroplethBreaks}
+                    choroplethColors={choroplethColors}
                     markerPositions={markerPositions}
                     corsicaCenter={corsicaCenter}
                     onSelect={handleMapClick}

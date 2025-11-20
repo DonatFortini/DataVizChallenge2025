@@ -1,6 +1,5 @@
 import type * as GeoJSON from 'geojson';
-import { buffer, convex, featureCollection, point, transformScale } from '@turf/turf';
-import * as d3 from 'd3';
+import { buffer, convex, featureCollection, point } from '@turf/turf';
 import { type GeojsonFetchResponse, Cooridinates, type Commune, type GeojsonFeature, type FeatureWithCoordinates, type NormalizedProperties } from './types';
 const geojsonCache = new Map<string, any>();
 
@@ -389,33 +388,23 @@ export async function closestObjectsToBase(base: Cooridinates, object_type: 'spo
     return { items: sorted, categories };
 }
 
-export async function computeAnamorphicCommunes(objects: GeojsonFetchResponse[]): Promise<GeoJSON.Feature[]> {
+export type CommuneDistanceChoropleth = { feature: GeoJSON.Feature; dist: number };
+
+export async function computeCommuneDistances(objects: GeojsonFetchResponse[]): Promise<CommuneDistanceChoropleth[]> {
     if (objects.length === 0) return [];
     const communes = await fetchGeojsonData('communes');
     if (!communes || communes.length === 0) return [];
 
-    const distances = communes.map(c => {
+    return communes.map(c => {
         const center = getMultipolygonCenter(c as Commune);
         const nearest = Math.min(...objects.map(o => haversineDistance(center, o.coordinates)));
-        return { commune: c as Commune, dist: nearest, center };
+        return {
+            feature: {
+                type: 'Feature',
+                properties: { ...(c.properties ?? {}), dist: nearest },
+                geometry: (c as any).geometry
+            } as GeoJSON.Feature,
+            dist: nearest
+        };
     });
-
-    const minDist = Math.min(...distances.map(d => d.dist));
-    const maxDist = Math.max(...distances.map(d => d.dist));
-    const scale = maxDist === minDist
-        ? () => 1.0
-        : d3.scalePow().exponent(0.6).domain([minDist, maxDist]).range([0.6, 2.4]);
-
-    const distorted: GeoJSON.Feature[] = [];
-    for (const { commune, dist } of distances) {
-        const geom = (commune as any).geometry as GeoJSON.Polygon | GeoJSON.MultiPolygon;
-        if (!geom) continue;
-        const center = getMultipolygonCenter(commune);
-        const scaleFactor = scale(dist);
-        const origin: [number, number] = [center.longitude, center.latitude];
-        const scaled = transformScale({ type: 'Feature', properties: { ...commune.properties, dist }, geometry: geom }, scaleFactor, { origin }) as GeoJSON.Feature;
-        distorted.push(scaled);
-    }
-
-    return distorted;
 }

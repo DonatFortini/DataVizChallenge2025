@@ -38,7 +38,9 @@ type MapViewProps = {
     base: Cooridinates | null;
     communeFeature: GeoJSONType.Feature | null;
     isochroneFeatures: GeoJSONType.Feature[];
-    anamorphicFeatures: GeoJSONType.Feature[];
+    choroplethFeatures: GeoJSONType.Feature[];
+    choroplethBreaks: number[];
+    choroplethColors: string[];
     markerPositions: MarkerInfo[];
     corsicaCenter: [number, number];
     onSelect: (coords: Cooridinates) => void;
@@ -48,7 +50,9 @@ export function MapView({
     base,
     communeFeature,
     isochroneFeatures,
-    anamorphicFeatures,
+    choroplethFeatures,
+    choroplethBreaks,
+    choroplethColors,
     markerPositions,
     corsicaCenter,
     onSelect
@@ -63,11 +67,18 @@ export function MapView({
             {communeFeature && (
                 <GeoJSON key={`${communeFeature.properties?.nom ?? 'commune'}`} data={communeFeature} style={{ color: '#2563eb', weight: 2 }} />
             )}
-            {anamorphicFeatures.length > 0 && (
+            {choroplethFeatures.length > 0 && (
                 <GeoJSON
-                    key="anamorphic"
-                    data={{ type: 'FeatureCollection', features: anamorphicFeatures } as any}
-                    style={{ color: '#a855f7', weight: 1, fillOpacity: 0.08 }}
+                    key="choropleth"
+                    data={{ type: 'FeatureCollection', features: choroplethFeatures } as any}
+                    style={(feat: any) => {
+                        const dist = feat.properties?.dist ?? 0;
+                        const breaks = choroplethBreaks.length > 0 ? choroplethBreaks : [5, 10, 20, 30];
+                        const colors = choroplethColors.length > 0 ? choroplethColors : ['#15803d', '#4ade80', '#f59e0b', '#f97316', '#ef4444'];
+                        const idx = breaks.findIndex((b: number) => dist <= b);
+                        const color = idx === -1 ? colors[colors.length - 1] : colors[Math.min(idx, colors.length - 1)];
+                        return { color, weight: 0.5, fillOpacity: 0.25, fillColor: color };
+                    }}
                 />
             )}
             {isochroneFeatures.map((feat, idx) => (
@@ -83,6 +94,20 @@ export function MapView({
                 ))}
             </LayerGroup>
             {base && <Marker position={[base.latitude, base.longitude]} icon={createColoredIcon('#ef4444')} />}
+            {choroplethBreaks.length > 0 && (
+                <div className="map-legend">
+                    <strong>Distance au plus proche</strong>
+                    <ul>
+                        {choroplethBreaks.map((b, idx) => {
+                            const prev = idx === 0 ? 0 : choroplethBreaks[idx - 1];
+                            const label = idx === 0 ? `≤ ${b} km` : `${prev} - ${b} km`;
+                            const color = choroplethColors[Math.min(idx, choroplethColors.length - 1)];
+                            return <li key={idx}><span style={{ background: color }} />{label}</li>;
+                        })}
+                        <li><span style={{ background: choroplethColors[choroplethColors.length - 1] }} />{`> ${choroplethBreaks[choroplethBreaks.length - 1]} km`}</li>
+                    </ul>
+                </div>
+            )}
         </MapContainer>
     );
 }
