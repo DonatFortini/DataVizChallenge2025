@@ -72,6 +72,12 @@ function pickStringValue(props: Record<string, unknown> | undefined, keys: strin
     return undefined;
 }
 
+function datasetNameFromKey(object_type: 'sport' | 'etude' | 'sante'): string {
+    if (object_type === 'sport') return 'sport';
+    if (object_type === 'etude') return 'etude';
+    return 'sante';
+}
+
 export async function isInCorsica(point: Cooridinates): Promise<boolean> {
     try {
         const corse = await fetchRawGeojson('corse');
@@ -314,6 +320,39 @@ export function featureKey(feature: GeojsonFetchResponse): string {
     return `${nom}:${latitude.toFixed(6)},${longitude.toFixed(6)}`;
 }
 
+type ObjectsWithCategories = { items: GeojsonFetchResponse[]; categories: string[] };
+
+function normalizeCategoryValue(raw?: string | null): string {
+    if (typeof raw !== 'string') return '';
+    return raw.toLowerCase().trim();
+}
+
+async function objectsForDataset(object_type: 'sport' | 'etude' | 'sante', categoryFilter?: string): Promise<ObjectsWithCategories> {
+    const dataset = datasetNameFromKey(object_type);
+    const allObjects = await fetchGeojsonData(dataset);
+    const categories = Array.from(new Set(
+        allObjects
+            .map(o => (o.properties?.categorie ?? '') as string)
+            .filter(c => typeof c === 'string' && c.trim().length > 0)
+            .map(c => c.trim())
+    )).sort((a, b) => a.localeCompare(b));
+
+    const normalizedFilter = normalizeCategoryValue(categoryFilter);
+    const filteredObjects = normalizedFilter
+        ? allObjects.filter(o => normalizeCategoryValue((o.properties?.categorie ?? '') as string) === normalizedFilter)
+        : allObjects;
+
+    const deduped: GeojsonFetchResponse[] = [];
+    const seenKeys = new Set<string>();
+    for (const obj of filteredObjects) {
+        const key = featureKey(obj);
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        deduped.push(obj);
+    }
+
+    return { items: deduped, categories };
+}
 
 type IsochroneOptions = { paddingKm?: number };
 
@@ -347,45 +386,68 @@ export function computeIsochrone(base: Cooridinates, targets: Cooridinates[], op
 
 type ClosestResult = { items: GeojsonFetchResponse[]; categories: string[] };
 
-export async function closestObjectsToBase(base: Cooridinates, object_type: 'sport' | 'etude' | 'sante', categoryFilter?: string): Promise<ClosestResult> {
-    const dataset = object_type === 'sport' ? 'sport' : object_type === 'etude' ? 'etude' : 'sante';
-
+export async function closestObjectsToBase(
+    base: Cooridinates,
+    object_type: 'sport' | 'etude' | 'sante',
+    categoryFilter?: string,
+    limit = 10
+): Promise<ClosestResult> {
     const startCommune = await closestCommune(base) as Commune;
     if (!startCommune) return { items: [], categories: [] };
 
-    const allObjects = await fetchGeojsonData(dataset);
-    const categories = Array.from(new Set(
-        allObjects
-            .map(o => (o.properties?.categorie ?? '') as string)
-            .filter(c => typeof c === 'string' && c.trim().length > 0)
-            .map(c => c.trim())
-    )).sort((a, b) => a.localeCompare(b));
+    const { items, categories } = await objectsForDataset(object_type, categoryFilter);
 
-    const normalizedFilter = categoryFilter?.toLowerCase().trim();
-    const filteredObjects = normalizedFilter
-        ? allObjects.filter(o => (o.properties?.categorie ?? '').toString().toLowerCase().trim() === normalizedFilter)
-        : allObjects;
-
-    const deduped: GeojsonFetchResponse[] = [];
-    const seenKeys = new Set<string>();
-    for (const obj of filteredObjects) {
-        const key = featureKey(obj);
-        if (seenKeys.has(key)) continue;
-        seenKeys.add(key);
-        deduped.push(obj);
-    }
-
-    if (deduped.length === 0) {
+    if (items.length === 0) {
         return { items: [], categories };
     }
 
-    const sorted = [...deduped]
+    const sorted = [...items]
         .map(o => ({ o, dist: haversineDistance(base, o.coordinates) }))
-        .sort((a, b) => a.dist - b.dist)
-        .slice(0, 10)
-        .map(({ o }) => o);
+        .sort((a, b) => a.dist - b.dist);
 
-    return { items: sorted, categories };
+    const limited = Number.isFinite(limit) ? sorted.slice(0, limit) : sorted;
+
+    return { items: limited.map(({ o }) => o), categories };
+}
+
+export async function listDatasetCategories(object_type: 'sport' | 'etude' | 'sante'): Promise<string[]> {
+    const { categories } = await objectsForDataset(object_type);
+    return categories;
+}
+
+export type HeatmapPoint = {
+    coordinates: Cooridinates;
+    dist: number;
+    category?: string;
+    neighborCount: number;
+    intensity: number; // simple density/accessibility score
+};
+
+export async function computeCategoryHeatmap(
+    base: Cooridinates,
+    object_type: 'sport' | 'etude' | 'sante',
+    categoryFilter?: string
+): Promise<{ points: HeatmapPoint[]; categories: string[] }> {
+    const { items, categories } = await objectsForDataset(object_type, categoryFilter);
+    const pointsBase = items.map(item => ({
+        coordinates: item.coordinates,
+        dist: haversineDistance(base, item.coordinates),
+        category: item.properties?.categorie as string | undefined,
+    }));
+
+    const radiusKm = 15;
+    const points = pointsBase.map((p) => {
+        let neighborCount = 0;
+        for (let j = 0; j < pointsBase.length; j++) {
+            const other = pointsBase[j];
+            const d = haversineDistance(p.coordinates, other.coordinates);
+            if (d <= radiusKm) neighborCount++;
+        }
+        const intensity = neighborCount / Math.max(1, (1 + p.dist));
+        return { ...p, neighborCount, intensity };
+    });
+
+    return { points, categories };
 }
 
 export type CommuneDistanceChoropleth = { feature: GeoJSON.Feature; dist: number };
