@@ -1,100 +1,59 @@
 import type * as GeoJSON from 'geojson';
+import proj4 from "proj4";
 
-type NormalizedProperties = {
-    nom?: string;
-    categorie?: string;
-    commune?: string;
-    coordonnees?: string;
-    [key: string]: unknown;
+type QueryObject = {
+    nom: string;
+    categorie: string;
+    commune: string;
+    coordonnees: string;
+    geometry: GeoJSON.Point;
 };
 
-
-type FeatureWithCoordinates<G extends GeoJSON.Geometry = GeoJSON.Geometry> = {
-    properties: NormalizedProperties;
-    geometry: G;
-    coordinates: Cooridinates;
+type Commune = {
+    name: string;
+    neighbours: string[];
+    polygon: GeoJSON.MultiPolygon;
 };
 
-type Commune = FeatureWithCoordinates<GeoJSON.MultiPolygon | GeoJSON.Polygon>;
+type Coordinates = [number, number];
+interface CoordinateTrait {
+    toLambert(): Coordinates;
+    toWGS(): Coordinates;
+    readonly tuple: Coordinates;
+}
 
-type GeojsonFeature = GeoJSON.Feature<GeoJSON.Geometry, Record<string, unknown>>;
-type GeojsonFetchResponse = FeatureWithCoordinates;
+class Point implements CoordinateTrait {
+    public readonly tuple: Coordinates;
+    public readonly latitude: number;
+    public readonly longitude: number;
 
-class Cooridinates {
-    latitude: number;  // degrees
-    longitude: number; // degrees
-
-    private static readonly DEG_TO_RAD = Math.PI / 180;
-    private static readonly RAD_TO_DEG = 180 / Math.PI;
-    private static readonly LAMBERT = {
-        // Projection Lambert-93 constants (EPSG:2154)
-        n: 0.7256077650532670,
-        c: 11754255.426096,
-        xs: 700000.0,
-        ys: 12655612.049876, // corrected offset to avoid Y underflow
-        lambda0: 3 * (Math.PI / 180), // 3° in radians
-        e: 0.08181919104281579 // eccentricity (GRS80)
-    };
-
-    constructor(latitude: number, longitude: number) {
-        this.latitude = latitude;
-        this.longitude = longitude;
+    constructor(tuple: Coordinates) {
+        this.tuple = tuple;
+        this.latitude = tuple[1];
+        this.longitude = tuple[0];
     }
-
-    public toLambert(): { x: number; y: number } {
-        const { n, c, xs, ys, lambda0, e } = Cooridinates.LAMBERT;
-        const lat = this.latitude * Cooridinates.DEG_TO_RAD;
-        const lon = this.longitude * Cooridinates.DEG_TO_RAD;
-
-        const sinLat = Math.sin(lat);
-        const t = Math.tan(Math.PI / 4 + lat / 2) *
-            Math.pow((1 - e * sinLat) / (1 + e * sinLat), e / 2);
-        const s = Math.log(t);
-        const r = c * Math.exp(-n * s);
-        const theta = n * (lon - lambda0);
-
-        const x = xs + r * Math.sin(theta);
-        const y = ys - r * Math.cos(theta);
-
-        return { x, y };
+    toLambert(): Coordinates {
+        const [lon, lat] = this.tuple;
+        const point2154 = proj4("EPSG:4326", "EPSG:2154", [lon, lat]);
+        return [point2154[0], point2154[1]];
     }
-
-    public static fromLambert(x: number, y: number): Cooridinates {
-        const { n, c, xs, ys, lambda0, e } = Cooridinates.LAMBERT;
-        const dx = x - xs;
-        const dy = ys - y;
-        const r = Math.sign(n) * Math.sqrt(dx * dx + dy * dy);
-        const theta = Math.atan2(dx, dy);
-        const lon = lambda0 + theta / n;
-
-        const s = -1 / n * Math.log(Math.abs(r / c));
-        // initial latitude estimate (sphere)
-        let lat = 2 * Math.atan(Math.exp(s)) - Math.PI / 2;
-
-        // iterate to correct for ellipsoid (converges quickly)
-        for (let i = 0; i < 10; i++) {
-            const sinLat = Math.sin(lat);
-            const prev = lat;
-            lat = 2 * Math.atan(
-                Math.pow((1 + e * sinLat) / (1 - e * sinLat), e / 2) * Math.exp(s)
-            ) - Math.PI / 2;
-            if (Math.abs(lat - prev) < 1e-12) break;
-        }
-
-        return new Cooridinates(lat * Cooridinates.RAD_TO_DEG, lon * Cooridinates.RAD_TO_DEG);
-    }
-
-    public toGPS(): { latitude: number; longitude: number } {
-        return { latitude: this.latitude, longitude: this.longitude };
+    toWGS(): Coordinates {
+        const [x, y] = this.tuple;
+        const point4326 = proj4("EPSG:2154", "EPSG:4326", [x, y]);
+        return [point4326[0], point4326[1]];
     }
 }
 
-export { Cooridinates };
+
+const asPoint = (c: Coordinates) => new Point(c);
+const toLambert = (c: Coordinates): Coordinates => asPoint(c).toLambert();
+const toWGS = (c: Coordinates): Coordinates => asPoint(c).toWGS();
+
+export { Point, asPoint, toLambert, toWGS };
+
+
 export type {
-    NormalizedProperties,
-    FeatureWithCoordinates,
-    GeojsonFeature,
-    GeojsonFetchResponse,
-    Commune,
-    NormalizedProperties as FeatureProperties
+    Coordinates,
+    QueryObject,
+    Commune
 };
