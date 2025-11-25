@@ -45,7 +45,7 @@ function schedule<T>(task: () => Promise<T>): Promise<T> {
 }
 
 function buildCacheKey(a: Point, b: Point): string {
-    const round = (v: number) => v.toFixed(5);
+    const round = (v: number): string => Number(v).toFixed(5);
     return `${round(a.latitude)},${round(a.longitude)}->${round(
         b.latitude
     )},${round(b.longitude)}`;

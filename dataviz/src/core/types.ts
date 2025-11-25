@@ -1,6 +1,13 @@
 import type * as GeoJSON from 'geojson';
 import proj4 from "proj4";
 
+if (!proj4.defs('EPSG:2154')) {
+    proj4.defs(
+        'EPSG:2154',
+        '+proj=lcc +lat_1=49 +lat_2=44 +lat_0=46.5 +lon_0=3 +x_0=700000 +y_0=6600000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs'
+    );
+}
+
 type QueryObject = {
     id: string;
     nom: string;
@@ -11,7 +18,7 @@ type QueryObject = {
 };
 
 function formatCoordinates(coordonnees: Coordinates): string {
-    return `${coordonnees[0].toFixed(6)},${coordonnees[1].toFixed(6)}`;
+    return `${Number(coordonnees[0]).toFixed(6)},${Number(coordonnees[1]).toFixed(6)}`;
 }
 
 export function ObjectKeyfromObj(obj: QueryObject): string {
@@ -21,7 +28,6 @@ export function ObjectKeyfromObj(obj: QueryObject): string {
 export function ObjectKeyfromProps(nom: string, coordonnees: Coordinates): string {
     return `${nom}:${formatCoordinates(coordonnees)}`;
 }
-
 
 
 type Commune = {

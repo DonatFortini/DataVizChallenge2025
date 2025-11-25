@@ -2,7 +2,6 @@ import type { QueryObject } from './types';
 
 export type DatasetItem = QueryObject & {
     properties?: Record<string, unknown>;
-    wgs?: [number, number];
     label?: string;
 };
 
@@ -31,13 +30,3 @@ export const initialDatasetState = (): Record<DatasetKey, DatasetState> => ({
     sport: { loading: false, items: [], colors: [], categories: [], selectedCategory: 'all', selectedItems: {}, selectedColors: {}, error: null }
 });
 
-export const datasetItemKey = (item: DatasetItem): string => {
-    if (item.wgs) {
-        const [lat, lon] = item.wgs;
-        return `${item.nom ?? 'item'}:${lat.toFixed(5)},${lon.toFixed(5)}`;
-    }
-    if (item.geometry?.type === 'Point' && Array.isArray(item.geometry.coordinates)) {
-        return JSON.stringify(item.geometry.coordinates);
-    }
-    return (item.nom ?? 'item') + (item.commune ?? '');
-};

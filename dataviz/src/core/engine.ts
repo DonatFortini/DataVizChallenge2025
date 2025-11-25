@@ -1,4 +1,4 @@
-import { ObjectKeyfromProps, Point, type Commune, type QueryObject } from "./types";
+import { ObjectKeyfromProps, Point, type Commune, type Coordinates, type QueryObject } from "./types";
 import { point as turfPoint } from "@turf/helpers";
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { communes } from "./communes.data";
@@ -15,7 +15,7 @@ export async function loadGeoJSON(path: string): Promise<any> {
     if (!geojsonCache.has(path)) {
         geojsonCache.set(
             path,
-            fetch(`${BASE_URL}/${path}`).then((response) => {
+            fetch(`${BASE_URL}${path}`).then((response) => {
                 if (!response.ok) {
                     throw new Error(`Failed to load GeoJSON "${path}" (${response.status})`);
                 }
@@ -57,10 +57,9 @@ export async function getCommune(pointWGS84: Point): Promise<Commune> {
     for (const feature of geojson.features) {
         if (booleanPointInPolygon(lambertPoint, feature)) {
             const communeName: string = feature.properties.nom;
-            const neighbours = neighbouringCommunes(communeName);
             return {
                 name: communeName,
-                neighbours,
+                neighbours: neighbouringCommunes(communeName),
                 polygon: feature.geometry,
             };
         }
@@ -87,7 +86,7 @@ export async function ObjectsIn(
         objectsCache.set(
             key,
             (async () => {
-                const response = await fetch(`${BASE_URL}/${dataset}.geojson`);
+                const response = await fetch(`${BASE_URL}${dataset}.geojson`);
                 if (!response.ok) {
                     throw new Error(
                         `Failed to load dataset "${dataset}.geojson" (${response.status})`
@@ -101,16 +100,16 @@ export async function ObjectsIn(
 
                 for (const feature of geojson.features) {
                     const featureCategory =
-                        (feature.properties.categorie ?? "").toString().toLowerCase();
+                        (feature.properties.Categorie ?? "").toString().toLowerCase();
 
                     if (returnAll || featureCategory === normalizedCategory) {
                         results.push({
-                            id: ObjectKeyfromProps(feature.properties.nom, feature.properties.coordonnees),
-                            nom: feature.properties.nom,
-                            categorie: feature.properties.categorie,
-                            commune: feature.properties.commune,
-                            coordonnees: feature.properties.coordonnees, // WGS84
-                            geometry: feature.geometry, // Lambert
+                            id: ObjectKeyfromProps(feature.properties.Nom, feature.properties.Coordonnées),
+                            nom: feature.properties.Nom,
+                            categorie: feature.properties.Categorie,
+                            commune: feature.properties.Commune,
+                            coordonnees: feature.properties.Coordonnées as Coordinates, // WGS84
+                            geometry: feature.geometry as GeoJSON.Point, // Lambert
                         });
                     }
                 }
@@ -171,8 +170,7 @@ export async function closestTo(
 
     const withDistances = await Promise.all(
         candidates.map(async (obj) => {
-            const coord = obj.coordonnees as unknown as [number, number];
-            const targetPoint = new Point(coord);
+            const targetPoint = new Point(obj.coordonnees);
             const { distanceKm } = await roadDistanceBetween(pointWGS84, targetPoint);
             return { obj, distanceKm };
         })
