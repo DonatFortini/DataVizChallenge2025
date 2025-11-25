@@ -15,6 +15,13 @@ type SidebarProps = {
     onSelectCategory: (key: DatasetKey, category: string) => void;
     onToggleItem: (key: DatasetKey, item: QueryObject) => void;
     selectionCount: number;
+    heatmapDataset: DatasetKey;
+    heatmapCategory: string;
+    heatmapCategories: Record<DatasetKey, string[]>;
+    heatmapLoading: boolean;
+    heatmapError: string | null;
+    onHeatmapDatasetChange: (dataset: DatasetKey) => void;
+    onHeatmapCategoryChange: (category: string) => void;
 };
 
 export function Sidebar({
@@ -28,13 +35,23 @@ export function Sidebar({
     onTabChange,
     onSelectCategory,
     onToggleItem,
-    selectionCount
+    selectionCount,
+    heatmapDataset,
+    heatmapCategory,
+    heatmapCategories,
+    heatmapLoading,
+    heatmapError,
+    onHeatmapDatasetChange,
+    onHeatmapCategoryChange
 }: SidebarProps) {
+    const headerText = activeTab === 'selection'
+        ? 'Cliquez sur la carte pour sélectionner un point.'
+        : 'Mode heatmap : choisissez un jeu de données et une catégorie. Les clics sur la carte sont désactivés.';
     return (
         <div className="sidebar">
             <header>
                 <h1>Carte de la vie en Corse</h1>
-                <p>Cliquez sur la carte pour sélectionner un point.</p>
+                <p>{headerText}</p>
                 {baseLambert && (
                     <p className="small">Lambert: x {baseLambert.x.toFixed(0)} | y {baseLambert.y.toFixed(0)}</p>
                 )}
@@ -57,6 +74,7 @@ export function Sidebar({
 
             {error && <div className="alert error">{error}</div>}
             {status && <div className="alert info">{status}</div>}
+            {activeTab === 'heatmap' && heatmapError && <div className="alert error">{heatmapError}</div>}
             {commune && <CommuneCard commune={commune} />}
 
             {activeTab === 'selection' ? (
@@ -75,7 +93,15 @@ export function Sidebar({
                     </div>
                 </>
             ) : (
-                <PlaceholderSection selectionCount={selectionCount} />
+                <HeatmapSection
+                    dataset={heatmapDataset}
+                    category={heatmapCategory}
+                    categories={heatmapCategories[heatmapDataset] ?? []}
+                    loading={heatmapLoading}
+                    selectionCount={selectionCount}
+                    onDatasetChange={onHeatmapDatasetChange}
+                    onCategoryChange={onHeatmapCategoryChange}
+                />
             )}
             <footer className="footer">
                 <span>Théo N&apos;Guyen et Donat Fortini — 2025 challenge dataviz</span>
@@ -93,18 +119,55 @@ function CommuneCard({ commune }: { commune: Commune }) {
     );
 }
 
-function PlaceholderSection({ selectionCount }: { selectionCount: number }) {
+function HeatmapSection({
+    dataset,
+    category,
+    categories,
+    loading,
+    selectionCount,
+    onDatasetChange,
+    onCategoryChange
+}: {
+    dataset: DatasetKey;
+    category: string;
+    categories: string[];
+    loading: boolean;
+    selectionCount: number;
+    onDatasetChange: (dataset: DatasetKey) => void;
+    onCategoryChange: (category: string) => void;
+}) {
+    const categoryOptions = ['all', ...(categories ?? [])];
     return (
         <div className="section">
             <div className="section-header">
                 <div className="section-title">
-                    <span>Autres vues</span>
-                    <p className="small">Isochrone, choroplèthe et heatmap sont temporairement désactivées.</p>
+                    <span>Heatmap</span>
+                    <p className="small">Les clics carte sont désactivés ; choisissez vos filtres.</p>
                 </div>
+                <span className="pill muted">{selectionCount} sélection(s) réinitialisée(s)</span>
             </div>
             <div className="section-body">
-                <p className="small">Vous pouvez continuer à parcourir et sélectionner des points dans l&apos;onglet Sélections.</p>
-                <p className="small muted">{selectionCount > 0 ? `${selectionCount} sélection(s) en cours.` : 'Aucune sélection pour le moment.'}</p>
+                <label className="field-label">Jeu de données</label>
+                <select value={dataset} onChange={e => onDatasetChange(e.target.value as DatasetKey)} disabled={loading}>
+                    {(Object.keys(labelMap) as DatasetKey[]).map(key => (
+                        <option key={key} value={key}>{labelMap[key]}</option>
+                    ))}
+                </select>
+
+                <label className="field-label" style={{ marginTop: '0.6rem' }}>Catégorie</label>
+                <select
+                    value={category}
+                    onChange={e => onCategoryChange(e.target.value)}
+                    disabled={loading || categoryOptions.length === 1}
+                >
+                    {categoryOptions.map(cat => (
+                        <option key={cat} value={cat}>{cat === 'all' ? 'Toutes les catégories' : cat}</option>
+                    ))}
+                </select>
+                {loading
+                    ? <p className="small">Calcul de la heatmap...</p>
+                    : <p className="small muted">La carte colore chaque commune selon le nombre d&apos;objets trouvés.</p>
+                }
             </div>
         </div>
     );

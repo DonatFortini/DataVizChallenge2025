@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type * as GeoJSONType from 'geojson';
 import 'leaflet/dist/leaflet.css';
 import './App.css';
@@ -6,7 +6,7 @@ import './App.css';
 import { MapView, type MarkerInfo } from './components/MapView';
 import { Sidebar } from './components/Sidebar';
 import { labelMap, type DatasetKey, type DatasetState, initialDatasetState } from './core/datasets';
-import { closestTo, getCommune, isInCorsica } from './core/engine';
+import { ObjectsIn, closestTo, getCommune, isInCorsica, loadGeoJSON } from './core/engine';
 import { ObjectKeyfromObj, Point, toWGS, type Commune, type QueryObject } from './core/types';
 
 const palette = ['#22c55e', '#a855f7', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#6366f1', '#14b8a6'];
@@ -46,6 +46,60 @@ const convertMultiPolygonToWGS = (polygon: GeoJSONType.MultiPolygon): GeoJSONTyp
     )
 });
 
+const interpolateChannel = (start: number, end: number, t: number) => Math.round(start + (end - start) * t);
+const toHex = (value: number) => value.toString(16).padStart(2, '0');
+const rgbToHex = (r: number, g: number, b: number) => `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+
+const availabilityColor = (value: number, min: number, max: number, scaleMax?: number): string => {
+    const targetMax = Math.max(scaleMax ?? max, 1);
+    const range = Math.max(targetMax - min, 1);
+    const ratioRaw = Math.max(0, Math.min(1, (value - min) / range));
+    const ratio = Math.pow(ratioRaw, 0.55); // boost low values for readability
+    const low = [15, 31, 58]; // deep slate
+    const high = [242, 124, 67]; // warm orange
+    const r = interpolateChannel(low[0], high[0], ratio);
+    const g = interpolateChannel(low[1], high[1], ratio);
+    const b = interpolateChannel(low[2], high[2], ratio);
+    return rgbToHex(r, g, b);
+};
+
+const formatLegendValue = (value: number) => `${value} structure${value > 1 ? 's' : ''}`;
+const buildLegendStops = (min: number, max: number, scaleMax: number, quantiles?: { p50: number; p90: number }) => {
+    if (max === 0 && min === 0) {
+        return [{ label: '0 structure', color: availabilityColor(0, 0, 1), value: 0, tags: ['min', 'p50', 'p90', 'max'] }];
+    }
+
+    const candidates: Array<{ raw: number; tag: string }> = [
+        { raw: min, tag: 'min' },
+        { raw: quantiles?.p50 ?? min, tag: 'p50' },
+        { raw: quantiles?.p90 ?? max, tag: 'p90' },
+        { raw: max, tag: 'max' },
+        { raw: scaleMax, tag: scaleMax > max ? 'cap' : 'max' }
+    ];
+
+    const bucket = new Map<number, { value: number; tags: string[] }>();
+    for (const { raw, tag } of candidates) {
+        const value = Math.round(raw);
+        const current = bucket.get(value);
+        if (current) {
+            if (!current.tags.includes(tag)) current.tags.push(tag);
+        } else {
+            bucket.set(value, { value, tags: [tag] });
+        }
+    }
+
+    const stops = Array.from(bucket.values())
+        .sort((a, b) => a.value - b.value)
+        .map(({ value, tags }) => ({
+            value,
+            color: availabilityColor(value, min, scaleMax),
+            label: formatLegendValue(value),
+            tags
+        }));
+
+    return stops;
+};
+
 function App() {
     const [base, setBase] = useState<Point | null>(null);
     const [baseLambert, setBaseLambert] = useState<{ x: number; y: number } | null>(null);
@@ -54,6 +108,25 @@ function App() {
     const [status, setStatus] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'selection' | 'heatmap'>('selection');
+    const [communeFeatures, setCommuneFeatures] = useState<GeoJSONType.Feature<GeoJSONType.MultiPolygon>[]>([]);
+
+    const [heatmapDataset, setHeatmapDataset] = useState<DatasetKey>('sante');
+    const [heatmapCategory, setHeatmapCategory] = useState<string>('all');
+    const [heatmapCategories, setHeatmapCategories] = useState<Record<DatasetKey, string[]>>({
+        etude: [],
+        sante: [],
+        sport: []
+    });
+    const [heatmapData, setHeatmapData] = useState<{
+        counts: Record<string, number>;
+        min: number;
+        max: number;
+        scaleMax: number;
+        quantiles: { p50: number; p90: number };
+        breakdown: Record<string, { total: number; byCategory: Record<string, number> }>;
+    } | null>(null);
+    const [heatmapLoading, setHeatmapLoading] = useState(false);
+    const [heatmapError, setHeatmapError] = useState<string | null>(null);
 
     const corsicaCenter: [number, number] = [42.0396, 9.0129];
 
@@ -63,6 +136,33 @@ function App() {
         setBaseLambert(null);
         setDatasets(initialDatasetState());
     }, []);
+
+    const ensureCommunePolygons = useCallback(async (): Promise<GeoJSONType.Feature<GeoJSONType.MultiPolygon>[]> => {
+        if (communeFeatures.length > 0) return communeFeatures;
+        const geojson = await loadGeoJSON('communes.geojson');
+        const converted = geojson.features.map((feature: any) => ({
+            type: 'Feature',
+            properties: feature.properties,
+            geometry: convertMultiPolygonToWGS(feature.geometry as GeoJSONType.MultiPolygon)
+        })) as GeoJSONType.Feature<GeoJSONType.MultiPolygon>[];
+        setCommuneFeatures(converted);
+        return converted;
+    }, [communeFeatures]);
+
+    const ensureHeatmapCategories = useCallback(async (dataset: DatasetKey) => {
+        const existing = heatmapCategories[dataset];
+        if (existing && existing.length > 0) return existing;
+        const allObjects = await ObjectsIn(dataset, 'all');
+        const categories = Array.from(new Set(allObjects.map(i => i.categorie).filter(Boolean)));
+        setHeatmapCategories(prev => ({ ...prev, [dataset]: categories }));
+        return categories;
+    }, [heatmapCategories]);
+
+    useEffect(() => {
+        ensureCommunePolygons().catch(() => {
+            setHeatmapError('Impossible de charger la carte des communes.');
+        });
+    }, [ensureCommunePolygons]);
 
     const loadDataset = useCallback(async (key: DatasetKey, category: string, coords: Point, ctxCommune?: Commune | null) => {
         setDatasets(prev => ({
@@ -106,6 +206,7 @@ function App() {
     }, [commune]);
 
     const handleMapClick = useCallback(async (coords: Point) => {
+        if (activeTab === 'heatmap') return;
         setStatus('Vérification de la position...');
         setError(null);
         resetSelections();
@@ -134,16 +235,95 @@ function App() {
             setStatus(null);
             setError(e?.message ?? 'Erreur lors de la récupération des données.');
         }
-    }, [loadDataset, resetSelections]);
+    }, [activeTab, loadDataset, resetSelections]);
 
     const handleCategoryChange = async (key: DatasetKey, category: string) => {
         if (!base || !commune) return;
         await loadDataset(key, category, base, commune);
     };
 
+    const loadHeatmapData = useCallback(async (dataset: DatasetKey, category: string) => {
+        setHeatmapLoading(true);
+        setHeatmapError(null);
+        try {
+            const [features, objects] = await Promise.all([
+                ensureCommunePolygons(),
+                ObjectsIn(dataset, category)
+            ]);
+            ensureHeatmapCategories(dataset).catch(() => null);
+
+            const counts: Record<string, number> = {};
+            const breakdown: Record<string, { total: number; byCategory: Record<string, number> }> = {};
+            features.forEach(feature => {
+                const name = (feature.properties as any)?.nom ?? '';
+                if (name) {
+                    counts[name] = 0;
+                    breakdown[name] = { total: 0, byCategory: {} };
+                }
+            });
+            for (const obj of objects) {
+                const communeName = obj.commune ?? '';
+                if (!communeName) continue;
+                if (!breakdown[communeName]) {
+                    breakdown[communeName] = { total: 0, byCategory: {} };
+                }
+                const entry = breakdown[communeName];
+                entry.total += 1;
+                const cat = obj.categorie || 'Autre';
+                entry.byCategory[cat] = (entry.byCategory[cat] ?? 0) + 1;
+                counts[communeName] = entry.total;
+            }
+
+            const values = Object.values(counts);
+            const min = values.length ? Math.min(...values) : 0;
+            const max = values.length ? Math.max(...values) : 0;
+
+            const sorted = [...values].sort((a, b) => a - b);
+            const quantile = (p: number) => {
+                if (!sorted.length) return 0;
+                const idx = (sorted.length - 1) * p;
+                const lo = Math.floor(idx);
+                const hi = Math.ceil(idx);
+                if (lo === hi) return sorted[lo];
+                const frac = idx - lo;
+                return sorted[lo] * (1 - frac) + sorted[hi] * frac;
+            };
+
+            const p50 = quantile(0.5);
+            const p90 = quantile(0.9);
+            const scaleMax = Math.max(p90 || max, max, 1);
+
+            setHeatmapData({ counts, min, max, scaleMax, quantiles: { p50, p90 }, breakdown });
+        } catch (e: any) {
+            setHeatmapError(e?.message ?? 'Erreur lors du chargement de la heatmap.');
+            setHeatmapData(null);
+        } finally {
+            setHeatmapLoading(false);
+        }
+    }, [ensureCommunePolygons, ensureHeatmapCategories]);
+
     const handleTabChange = (tab: 'selection' | 'heatmap') => {
         setActiveTab(tab);
+        if (tab === 'heatmap') {
+            resetSelections();
+            setStatus(null);
+            setError(null);
+        }
     };
+
+    const handleHeatmapDatasetChange = (dataset: DatasetKey) => {
+        setHeatmapDataset(dataset);
+        setHeatmapCategory('all');
+    };
+
+    const handleHeatmapCategoryChange = (category: string) => {
+        setHeatmapCategory(category);
+    };
+
+    useEffect(() => {
+        if (activeTab !== 'heatmap') return;
+        loadHeatmapData(heatmapDataset, heatmapCategory);
+    }, [activeTab, heatmapCategory, heatmapDataset, loadHeatmapData]);
 
     const toggleItemSelection = (datasetKey: DatasetKey, item: QueryObject) => {
         const itemKey = ObjectKeyfromObj(item);
@@ -211,16 +391,62 @@ function App() {
         return `Point sélectionné • ${coords}`;
     }, [base, commune]);
 
+    const heatmapLegend = useMemo(() => {
+        if (!heatmapData) return [];
+        return buildLegendStops(heatmapData.min, heatmapData.max, heatmapData.scaleMax, heatmapData.quantiles);
+    }, [heatmapData]);
+
+    const heatmapRange = useMemo(() => {
+        if (!heatmapData) return null;
+        const minLabel = formatLegendValue(heatmapData.min);
+        const maxLabel = formatLegendValue(heatmapData.max);
+        const lowColor = availabilityColor(heatmapData.min, heatmapData.min, heatmapData.scaleMax);
+        const highColor = availabilityColor(heatmapData.max, heatmapData.min, heatmapData.scaleMax);
+        return { minLabel, maxLabel, lowColor, highColor };
+    }, [heatmapData]);
+
+    const heatmapColorFor = useCallback((communeName: string) => {
+        if (!heatmapData) return '#3b82f6';
+        const value = heatmapData.counts[communeName] ?? 0;
+        return availabilityColor(value, heatmapData.min, heatmapData.scaleMax);
+    }, [heatmapData]);
+
+    const heatmapTitle = useMemo(() => {
+        const datasetLabel = labelMap[heatmapDataset] ?? heatmapDataset;
+        const categoryLabel = heatmapCategory === 'all' ? 'Toutes catégories' : heatmapCategory;
+        return `${datasetLabel} • ${categoryLabel}`;
+    }, [heatmapCategory, heatmapDataset]);
+
+    const heatmapLayerKey = useMemo(() => {
+        if (activeTab !== 'heatmap') return '';
+        return `${heatmapDataset}-${heatmapCategory}-${heatmapData?.min ?? 0}-${heatmapData?.max ?? 0}`;
+    }, [activeTab, heatmapCategory, heatmapData?.max, heatmapData?.min, heatmapDataset]);
+
+    const isSelectionMode = activeTab === 'selection';
+
     return (
         <div className="app">
             <div className="map-pane">
                 <MapView
-                    base={base}
+                    base={isSelectionMode ? base : null}
                     baseLabel={baseMarkerLabel}
-                    communeFeature={communeFeature}
-                    markerPositions={markerPositions}
+                    communeFeature={isSelectionMode ? communeFeature : null}
+                    markerPositions={isSelectionMode ? markerPositions : []}
                     corsicaCenter={corsicaCenter}
                     onSelect={handleMapClick}
+                    selectionEnabled={isSelectionMode}
+                    heatmapLayerKey={heatmapLayerKey}
+                    heatmapLayer={activeTab === 'heatmap' && communeFeatures.length > 0 ? {
+                        features: communeFeatures,
+                        legend: heatmapLegend,
+                        colorFor: heatmapColorFor,
+                        title: heatmapTitle,
+                        loading: heatmapLoading,
+                        range: heatmapRange ?? undefined,
+                        countFor: (name: string) => heatmapData?.counts[name] ?? 0,
+                        breakdownFor: (name: string) => heatmapData?.breakdown[name],
+                        hasZero: Object.values(heatmapData?.counts ?? {}).some(v => v === 0)
+                    } : null}
                 />
             </div>
             <Sidebar
@@ -235,6 +461,13 @@ function App() {
                 onSelectCategory={handleCategoryChange}
                 onToggleItem={toggleItemSelection}
                 selectionCount={selectedCount}
+                heatmapDataset={heatmapDataset}
+                heatmapCategory={heatmapCategory}
+                heatmapCategories={heatmapCategories}
+                heatmapLoading={heatmapLoading}
+                heatmapError={heatmapError}
+                onHeatmapDatasetChange={handleHeatmapDatasetChange}
+                onHeatmapCategoryChange={handleHeatmapCategoryChange}
             />
         </div>
     );

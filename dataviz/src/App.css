@@ -250,6 +250,7 @@
     display: flex;
     align-items: center;
     gap: 0.35rem;
+    white-space: nowrap;
 }
 
 .map-legend li span {
@@ -257,4 +258,31 @@
     height: 12px;
     border-radius: 3px;
     display: inline-block;
+}
+
+.legend-hatch {
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0 8 L8 0 M-2 2 L2 -2 M6 10 L10 6' stroke='rgba(255,255,255,0.5)' stroke-width='1.6' fill='transparent'/%3E%3C/svg%3E");
+    border: 1px solid rgba(255,255,255,0.25);
+}
+
+.legend-gradient {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.45rem;
+}
+
+.legend-bar {
+    height: 10px;
+    border-radius: 999px;
+    width: 140px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.legend-min,
+.legend-max {
+    font-size: 0.8rem;
+    color: #cbd5e1;
+    white-space: nowrap;
 }
