@@ -110,7 +110,7 @@ function App() {
     const [datasets, setDatasets] = useState<Record<DatasetKey, DatasetState>>(initialDatasetState);
     const [status, setStatus] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<ActiveTab>('selection');
+    const [activeTab, setActiveTab] = useState<ActiveTab>('heatmap');
     const [communeFeatures, setCommuneFeatures] = useState<GeoJSONType.Feature<GeoJSONType.MultiPolygon>[]>([]);
 
     const [heatmapDataset, setHeatmapDataset] = useState<DatasetKey>('sante');

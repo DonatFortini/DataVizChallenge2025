@@ -17,6 +17,7 @@ export function SelectionSection({ datasetKey, data, hasBase, onSelectCategory, 
             <div className="section-header">
                 <span>{labelMap[datasetKey]}</span>
                 <select
+                    className="section-select"
                     value={data.selectedCategory}
                     onChange={(e) => onSelectCategory(datasetKey, e.target.value)}
                     disabled={!hasBase || data.loading}

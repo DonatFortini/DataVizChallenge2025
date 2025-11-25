@@ -19,8 +19,8 @@ export const PARCOURS_CONFIG: Record<ParcoursStepKey, { label: string; etude: st
     enfance: {
         label: "Enfance",
         etude: ["ECOLE MATERNELLE", "ECOLE ELEMENTAIRE"],
-        sante: ["Pédiatre", "Médecin généraliste"],
-        sport: ["Plateau EPS/Multisports/city-stades", "Boucle de randonnée"]
+        sante: ["Pédiatre", "Chirurgien-dentiste"],
+        sport: ["Plateau EPS/Multisports/city-stades"]
     },
     adolescence: {
         label: "Adolescence",
@@ -30,12 +30,13 @@ export const PARCOURS_CONFIG: Record<ParcoursStepKey, { label: string; etude: st
     },
     adulte: {
         label: "Adulte",
-        etude: ["UNIVERSITE", "ETABLISSEMENT SPECIALISE"],
-        sante: ["Médecin généraliste", "Cardiologue"],
+        etude: ["UNIVERSITE"],
+        sante: ["Cardiologue"],
         sport: ["Salle de musculation/cardio training", "Parcours sportif/santé"]
     }
 };
 export const PARCOURS_STEPS: ParcoursStepKey[] = ['enfance', 'adolescence', 'adulte'];
+const DOMAIN_LABELS: Record<DatasetKey, string> = { etude: 'Éducation', sante: 'Santé', sport: 'Sport' };
 
 function accessibilityLevel(minutes: number): AccessLevel {
     if (minutes < 15) return { label: 'Bon accès', color: 'green', icon: '🟢' };
@@ -112,6 +113,16 @@ export function ProfilSection({
         return 'Plusieurs opportunités sont éloignées et peuvent limiter le quotidien.';
     }, [globalScore, hasBase, results.length]);
 
+    const plannedNeeds = useMemo(() => {
+        const config = PARCOURS_CONFIG[focusedStep];
+        const items = (['etude', 'sante', 'sport'] as DatasetKey[])
+            .flatMap(domain => config[domain].map(cat => `${DOMAIN_LABELS[domain]} — ${cat}`));
+        const tooltip = items.length
+            ? `Besoins pré-remplis :\n${items.join('\n')}`
+            : 'Aucun besoin pré-rempli';
+        return { count: items.length, tooltip, items };
+    }, [focusedStep]);
+
     return (
         <div className="sections">
             <div className="section">
@@ -128,7 +139,21 @@ export function ProfilSection({
                     </select>
                     <div className="parcours-step" key={focusedStep}>
                         <div className="parcours-header">
-                            <span className="pill muted">{PARCOURS_CONFIG[focusedStep].etude.length + PARCOURS_CONFIG[focusedStep].sante.length + PARCOURS_CONFIG[focusedStep].sport.length} besoins prévus</span>
+                            <div className="pill-tooltip">
+                                <span className="pill muted">{plannedNeeds.count} besoins prévus</span>
+                                <div className="pill-tooltip-panel">
+                                    <p className="pill-tooltip-title">Besoins pré-remplis</p>
+                                    {plannedNeeds.items.length > 0 ? (
+                                        <ul>
+                                            {plannedNeeds.items.map(item => (
+                                                <li key={item}>{item}</li>
+                                            ))}
+                                        </ul>
+                                    ) : (
+                                        <p className="muted small">Aucun besoin pré-rempli</p>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                         <div className="parcours-extras">
                             {(['etude', 'sante', 'sport'] as DatasetKey[]).map(domain => {
@@ -175,7 +200,7 @@ export function ProfilSection({
                     {!hasBase && <p className="small">Sélectionnez un point sur la carte pour préparer l’analyse.</p>}
 
                     <div className="profil-actions">
-                        <button type="button" onClick={onRunAnalysis} disabled={!canRun || loading}>
+                        <button className="primary-btn" type="button" onClick={onRunAnalysis} disabled={!canRun || loading}>
                             {loading ? 'Analyse en cours...' : results.length > 0 ? 'Recalculer le parcours' : 'Lancer le parcours'}
                         </button>
                         {needsDirty && hasBase && !loading && (

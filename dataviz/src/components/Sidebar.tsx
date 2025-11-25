@@ -207,16 +207,16 @@ export function Sidebar({
 
             <div className="tabs">
                 <button
-                    className={activeTab === 'selection' ? 'tab active' : 'tab'}
-                    onClick={() => onTabChange('selection')}
-                >
-                    Sélections
-                </button>
-                <button
                     className={activeTab === 'heatmap' ? 'tab active' : 'tab'}
                     onClick={() => onTabChange('heatmap')}
                 >
                     Heatmap
+                </button>
+                <button
+                    className={activeTab === 'selection' ? 'tab active' : 'tab'}
+                    onClick={() => onTabChange('selection')}
+                >
+                    Sélections
                 </button>
                 <button
                     className={activeTab === 'profil' ? 'tab active' : 'tab'}

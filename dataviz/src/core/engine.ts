@@ -3,14 +3,9 @@ import { point as turfPoint } from "@turf/helpers";
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { communes } from "./communes.data";
 import type { DatasetKey } from "./datasets";
-import { roadDistanceBetween } from "./distance";
+import { roadDistancesFrom, FALLBACK_DISTANCE_KM } from "./distance";
 
 const BASE_URL = (import.meta as any).env?.BASE_URL ?? "/";
-
-const inCorsicaLatRange = (lat: number) => lat >= 40 && lat <= 44.5;
-const inCorsicaLonRange = (lon: number) => lon >= 8 && lon <= 10.5;
-const inCorsicaBounds = (lat: number, lon: number) => inCorsicaLatRange(lat) && inCorsicaLonRange(lon);
-
 
 const geojsonCache = new Map<string, Promise<any>>();
 
@@ -35,12 +30,6 @@ function parseCoordinates(raw: unknown): Coordinates {
         const first = Number(values[0]);
         const second = Number(values[1]);
         if (!Number.isFinite(first) || !Number.isFinite(second)) return null;
-        if (inCorsicaBounds(first, second)) {
-            return [second, first];
-        }
-        if (inCorsicaBounds(second, first)) {
-            return [first, second];
-        }
         return [first, second];
     };
 
@@ -62,7 +51,6 @@ function neighbouringCommunes(communeName: string): string[] {
     return Array.from(new Set(commune.voisins));
 }
 
-
 export async function isInCorsica(pointWGS84: Point): Promise<boolean> {
     const geojson = await loadGeoJSON("corse.geojson");
     const corsicaFeature = geojson.features[0];
@@ -72,7 +60,6 @@ export async function isInCorsica(pointWGS84: Point): Promise<boolean> {
 
     return booleanPointInPolygon(lambertPoint, corsicaFeature);
 }
-
 
 export async function getCommune(pointWGS84: Point): Promise<Commune> {
     if (!(await isInCorsica(pointWGS84))) {
@@ -97,14 +84,12 @@ export async function getCommune(pointWGS84: Point): Promise<Commune> {
     throw new Error("No commune found for the given point");
 }
 
-
 const objectsCache = new Map<string, Promise<QueryObject[]>>();
 const closestCache = new Map<string, Promise<QueryObject[]>>();
 
 function objectsCacheKey(dataset: DatasetKey, category: string): string {
     return `${dataset}::${(category ?? "").toString().toLowerCase()}`;
 }
-
 
 export async function ObjectsIn(
     dataset: DatasetKey,
@@ -139,8 +124,8 @@ export async function ObjectsIn(
                             nom: feature.properties.Nom,
                             categorie: feature.properties.Categorie,
                             commune: feature.properties.Commune,
-                            coordonnees: coords, // WGS84 [lon, lat]
-                            geometry: feature.geometry as GeoJSON.Point, // Lambert
+                            coordonnees: coords,
+                            geometry: feature.geometry as GeoJSON.Point,
                         });
                     }
                 }
@@ -153,7 +138,6 @@ export async function ObjectsIn(
     return objectsCache.get(key)!;
 }
 
-
 export async function closestTo(
     pointWGS84: Point,
     commune: Commune,
@@ -162,66 +146,100 @@ export async function closestTo(
 ): Promise<QueryObject[]> {
     const coordsKey = `${pointWGS84.latitude.toFixed(5)},${pointWGS84.longitude.toFixed(5)}`;
     const cacheKey = `${dataset}::${category.toLowerCase()}::${commune.name}::${coordsKey}`;
+
     if (closestCache.has(cacheKey)) {
         return closestCache.get(cacheKey)!;
     }
 
     const promise = (async () => {
         const allObjects: QueryObject[] = await ObjectsIn(dataset, category);
+        console.log(`Found ${allObjects.length} objects in dataset "${dataset}" with category "${category}"`);
+        // Deduplicate
+        const deduped: QueryObject[] = [];
+        const seen = new Set<string>();
+        for (const obj of allObjects) {
+            const key = ObjectKeyfromProps(obj.nom, obj.coordonnees);
+            if (!seen.has(key)) {
+                seen.add(key);
+                deduped.push(obj);
+            }
+        }
+        console.log(`Deduplicated to ${deduped.length} objects`);
+        // Group by commune
+        const byCommune = new Map<string, QueryObject[]>();
+        for (const obj of deduped) {
+            const list = byCommune.get(obj.commune) ?? [];
+            list.push(obj);
+            byCommune.set(obj.commune, list);
+        }
+        console.log(`Grouped objects by commune: ${byCommune.size} communes`);
+        const CHUNK_SIZE = 35; // Match distance.ts TABLE_MAX_COORDS
+        const visited = new Set<string>();
+        const withDistances: Array<{ obj: QueryObject; distanceKm: number }> = [];
 
-            const byCommune = new Map<string, QueryObject[]>();
-            for (const obj of allObjects) {
-                const list = byCommune.get(obj.commune) ?? [];
-                list.push(obj);
-                byCommune.set(obj.commune, list);
+        const processBatch = async (batch: QueryObject[]) => {
+            if (!batch.length) return;
+            console.log(`Processing batch of ${batch.length} objects for distance calculation`);
+            const points = batch.map((obj) => new Point(obj.coordonnees));
+            const distances = await roadDistancesFrom(pointWGS84, points);
+            for (let i = 0; i < batch.length; i++) {
+                withDistances.push({
+                    obj: batch[i],
+                    distanceKm: distances[i] ?? FALLBACK_DISTANCE_KM,
+                });
+            }
+        };
+
+        const priority: QueryObject[] = [];
+        const mark = (obj: QueryObject) => {
+            const key = ObjectKeyfromProps(obj.nom, obj.coordonnees);
+            if (!visited.has(key)) {
+                visited.add(key);
+                priority.push(obj);
+            }
+        };
+
+        // Priority: Same commune + neighbors
+        for (const obj of byCommune.get(commune.name) ?? []) mark(obj);
+        for (const neighbour of commune.neighbours) {
+            for (const obj of byCommune.get(neighbour) ?? []) mark(obj);
+        }
+
+        // Process priority tier (commune + neighbours)
+        for (let start = 0; start < priority.length; start += CHUNK_SIZE) {
+            await processBatch(priority.slice(start, start + CHUNK_SIZE));
+        }
+
+        // Process remaining objects
+        const remaining = deduped.filter((obj) => {
+            const key = ObjectKeyfromProps(obj.nom, obj.coordonnees);
+            return !visited.has(key);
+        });
+
+        for (let start = 0; start < remaining.length; start += CHUNK_SIZE) {
+            await processBatch(remaining.slice(start, start + CHUNK_SIZE));
+        }
+
+        // Sort by distance
+        const hasValid = withDistances.some(({ distanceKm }) => distanceKm < FALLBACK_DISTANCE_KM);
+
+        withDistances.sort((a, b) => {
+            const aInvalid = a.distanceKm >= FALLBACK_DISTANCE_KM;
+            const bInvalid = b.distanceKm >= FALLBACK_DISTANCE_KM;
+
+            if (hasValid) {
+                if (aInvalid && !bInvalid) return 1;
+                if (!aInvalid && bInvalid) return -1;
             }
 
-            const candidateMap = new Map<string, QueryObject>();
+            return a.distanceKm - b.distanceKm;
+        });
 
-            const addCandidate = (obj: QueryObject) => {
-                if (!candidateMap.has(obj.nom)) {
-                    candidateMap.set(obj.nom, obj);
-                }
-            };
-
-            for (const obj of byCommune.get(commune.name) ?? []) {
-                addCandidate(obj);
-            }
-
-            for (const neighbourName of commune.neighbours) {
-                for (const obj of byCommune.get(neighbourName) ?? []) {
-                    addCandidate(obj);
-                }
-            }
-
-            const MIN_CANDIDATES = 10;
-            const MAX_CANDIDATES = 50;
-
-            if (candidateMap.size < MIN_CANDIDATES) {
-                for (const obj of allObjects) {
-                    addCandidate(obj);
-                    if (candidateMap.size >= MAX_CANDIDATES) break;
-                }
-            }
-
-            const candidates = Array.from(candidateMap.values());
-
-            const withDistances = await Promise.all(
-                candidates.map(async (obj) => {
-                    const targetPoint = new Point(obj.coordonnees);
-                    const { distanceKm } = await roadDistanceBetween(pointWGS84, targetPoint);
-                    return { obj, distanceKm };
-                })
-            );
-
-            withDistances.sort((a, b) => a.distanceKm - b.distanceKm);
-
-            const LIMIT = 10;
+        const LIMIT = 10;
         return withDistances.slice(0, LIMIT).map((x) => x.obj);
     })();
 
     promise.catch(() => {
-        // allow retry on failure
         closestCache.delete(cacheKey);
     });
 
