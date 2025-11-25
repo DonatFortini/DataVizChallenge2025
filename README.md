@@ -66,3 +66,16 @@ Faire des cartes isochrones "à la volée"
 - Altimétrie (MNT) — RGE ALTI  
     [RGE ALTI (MNT) — géoservices IGN](https://geoservices.ign.fr/rgealti)  
     Modèle numérique de terrain de référence, utile pour visualisation 3D et calculs de distances / pentes.
+
+- BD TOPO® — Données vectorielles de l'IGN
+    [BD TOPO® — géoservices IGN](https://geoservices.ign.fr/bdtopo)
+    Données vectorielles détaillées (routes, bâtiments, hydrographie, etc.) pour la Corse.
+    Utilisé pour les limites administratives.
+
+- Leaflet.js  
+    [Leaflet — Leaflet](https://leafletjs.com/)  
+    Bibliothèque JavaScript open-source pour la création de cartes interactives.
+
+- OSRM
+    [OSRM](https://project-osrm.org/)  
+    Moteur de routage open-source pour calculer des itinéraires et des isochrones.
