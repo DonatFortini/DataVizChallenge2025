@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type * as GeoJSONType from 'geojson';
 import 'leaflet/dist/leaflet.css';
 import './App.css';
@@ -6,19 +6,8 @@ import './App.css';
 import { MapView, type MarkerInfo } from './components/MapView';
 import { Sidebar } from './components/Sidebar';
 import { labelMap, type DatasetKey, type DatasetState, initialDatasetState } from './core/datasets';
-import {
-    closestCommune,
-    closestObjectsToBase,
-    computeIsochrone,
-    computeCommuneDistances,
-    computeCategoryHeatmap,
-    listDatasetCategories,
-    featureKey,
-    isInCorsica,
-    type CommuneDistanceChoropleth,
-    type HeatmapPoint
-} from './core/engine';
-import { Cooridinates, type Commune, type GeojsonFetchResponse } from './core/types';
+import { closestTo, getCommune, isInCorsica } from './core/engine';
+import { ObjectKeyfromObj, Point, toWGS, type Commune, type QueryObject } from './core/types';
 
 const palette = ['#22c55e', '#a855f7', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#6366f1', '#14b8a6'];
 
@@ -34,95 +23,48 @@ const generateColors = (count: number): string[] => {
 
 const randomColor = () => palette[Math.floor(Math.random() * palette.length)];
 
-const choroplethColors = ['#15803d', '#4ade80', '#f59e0b', '#f97316', '#ef4444'];
-const heatmapColors = ['#dc2626', '#f97316', '#facc15', '#38bdf8', '#2563eb'];
-
-const buildMarkerLabel = (datasetKey: DatasetKey, item: GeojsonFetchResponse): string => {
-    const props: any = item.properties ?? {};
+const buildMarkerLabel = (datasetKey: DatasetKey, item: QueryObject): string => {
     const datasetLabel = labelMap[datasetKey] ?? datasetKey;
-    const title = props.nom ?? props.name ?? 'Objet';
-    const cat = props.categorie ?? props.profession;
-    const communeName = props.commune ?? props.nom_commune;
+    const title = item.nom ?? 'Objet';
+    const cat = item.categorie;
+    const communeName = item.commune;
     const segments = [datasetLabel, title];
     if (cat) segments.push(cat);
     if (communeName) segments.push(communeName);
     return segments.join(' — ');
 };
 
-const computeBreaks = (values: number[]): number[] => {
-    if (values.length === 0) return [];
-    const sorted = [...values].sort((a, b) => a - b);
-    const pick = (p: number) => sorted[Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1)))];
-    return [pick(0.25), pick(0.5), pick(0.75), sorted[sorted.length - 1]];
-};
+const convertMultiPolygonToWGS = (polygon: GeoJSONType.MultiPolygon): GeoJSONType.MultiPolygon => ({
+    type: 'MultiPolygon',
+    coordinates: polygon.coordinates.map(poly =>
+        poly.map(ring =>
+            ring.map(coord => {
+                const [lon, lat] = toWGS(coord as [number, number]);
+                return [lon, lat];
+            })
+        )
+    )
+});
 
 function App() {
-    const [base, setBase] = useState<Cooridinates | null>(null);
+    const [base, setBase] = useState<Point | null>(null);
     const [baseLambert, setBaseLambert] = useState<{ x: number; y: number } | null>(null);
     const [commune, setCommune] = useState<Commune | null>(null);
     const [datasets, setDatasets] = useState<Record<DatasetKey, DatasetState>>(initialDatasetState);
     const [status, setStatus] = useState<string | null>(null);
-    const [isochrone, setIsochrone] = useState<GeoJSONType.Polygon | null>(null);
-    const [choropleth, setChoropleth] = useState<GeoJSONType.Feature[] | null>(null);
-    const [choroplethBreaks, setChoroplethBreaks] = useState<number[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'selection' | 'heatmap'>('selection');
-    const [heatSelection, setHeatSelection] = useState<{ dataset: DatasetKey; category: string }>({ dataset: 'etude', category: 'all' });
-    const [heatCategories, setHeatCategories] = useState<string[]>([]);
-    const [heatPoints, setHeatPoints] = useState<HeatmapPoint[]>([]);
-    const [heatBreaks, setHeatBreaks] = useState<number[]>([]);
-    const [heatLoading, setHeatLoading] = useState(false);
-    const [heatError, setHeatError] = useState<string | null>(null);
 
     const corsicaCenter: [number, number] = [42.0396, 9.0129];
-
-    const resetDerivedStateKeepBase = useCallback(() => {
-        setIsochrone(null);
-        setChoropleth(null);
-        setChoroplethBreaks([]);
-        setDatasets(initialDatasetState());
-        setHeatPoints([]);
-        setHeatBreaks([]);
-        setHeatLoading(false);
-        setHeatError(null);
-        setStatus(null);
-        setError(null);
-        setHeatSelection(prev => ({ dataset: prev.dataset, category: 'all' }));
-    }, []);
 
     const resetSelections = useCallback(() => {
         setCommune(null);
         setBase(null);
         setBaseLambert(null);
-        setIsochrone(null);
-        setChoropleth(null);
-        setChoroplethBreaks([]);
-        setHeatPoints([]);
-        setHeatBreaks([]);
-        setHeatLoading(false);
-        setHeatError(null);
         setDatasets(initialDatasetState());
     }, []);
 
-    const loadHeatCategories = useCallback(async (dataset: DatasetKey) => {
-        try {
-            const categories = await listDatasetCategories(dataset);
-            setHeatCategories(categories);
-            setHeatSelection(prev => {
-                const validCategory = prev.category !== 'all' && categories.includes(prev.category) ? prev.category : 'all';
-                if (prev.category === validCategory && prev.dataset === dataset) return prev;
-                return { ...prev, category: validCategory };
-            });
-        } catch (e: any) {
-            setHeatError(e?.message ?? 'Erreur lors du chargement des catégories.');
-        }
-    }, []);
-
-    useEffect(() => {
-        loadHeatCategories(heatSelection.dataset);
-    }, [heatSelection.dataset, loadHeatCategories]);
-
-    const loadDataset = useCallback(async (key: DatasetKey, category: string, coords: Cooridinates) => {
+    const loadDataset = useCallback(async (key: DatasetKey, category: string, coords: Point, ctxCommune?: Commune | null) => {
         setDatasets(prev => ({
             ...prev,
             [key]: {
@@ -132,10 +74,17 @@ function App() {
                 selectedCategory: category
             }
         }));
-        const filter = category === 'all' ? undefined : category;
+
         try {
-            const { items, categories } = await closestObjectsToBase(coords, key, filter);
+            const communeToUse = ctxCommune ?? commune;
+            if (!communeToUse) {
+                throw new Error('Commune introuvable.');
+            }
+
+            const items = await closestTo(coords, communeToUse, key, category);
             const colors = generateColors(items.length);
+            const categories = Array.from(new Set(items.map(i => i.categorie).filter(Boolean)));
+
             setDatasets(prev => ({
                 ...prev,
                 [key]: {
@@ -154,37 +103,16 @@ function App() {
                 [key]: { ...prev[key], loading: false, error: e?.message ?? 'Erreur de chargement' }
             }));
         }
-    }, []);
+    }, [commune]);
 
-    const refreshHeatmap = useCallback(async (dataset: DatasetKey, category: string, coords: Cooridinates) => {
-        setHeatLoading(true);
-        setHeatError(null);
-        try {
-            const { points, categories } = await computeCategoryHeatmap(
-                coords,
-                dataset,
-                category === 'all' ? undefined : category
-            );
-            setHeatCategories(categories);
-            setHeatPoints(points);
-            setHeatBreaks(computeBreaks(points.map(p => p.intensity)));
-        } catch (e: any) {
-            setHeatError(e?.message ?? 'Erreur lors du calcul de la heatmap.');
-            setHeatPoints([]);
-            setHeatBreaks([]);
-        } finally {
-            setHeatLoading(false);
-        }
-    }, []);
-
-    const handleMapClick = useCallback(async (coords: Cooridinates) => {
+    const handleMapClick = useCallback(async (coords: Point) => {
         setStatus('Vérification de la position...');
         setError(null);
         resetSelections();
 
         try {
             const lambert = coords.toLambert();
-            setBaseLambert(lambert);
+            setBaseLambert({ x: lambert[0], y: lambert[1] });
 
             const inside = await isInCorsica(coords);
             if (!inside) {
@@ -193,72 +121,32 @@ function App() {
                 return;
             }
 
-            const foundCommune = await closestCommune(coords) as Commune | undefined;
-            if (!foundCommune) {
-                setStatus(null);
-                setError('Aucune commune trouvée.');
-                return;
-            }
-
-            setBase(coords);
+            const foundCommune = await getCommune(coords);
             setCommune(foundCommune);
-            setIsochrone(null);
+            setBase(coords);
             setStatus('Chargement des données à proximité...');
 
             await Promise.all((['etude', 'sante', 'sport'] as DatasetKey[])
-                .map(key => loadDataset(key, 'all', coords)));
+                .map(key => loadDataset(key, 'all', coords, foundCommune)));
 
-            await refreshHeatmap(heatSelection.dataset, heatSelection.category, coords);
             setStatus(null);
         } catch (e: any) {
             setStatus(null);
             setError(e?.message ?? 'Erreur lors de la récupération des données.');
         }
-    }, [heatSelection.category, heatSelection.dataset, loadDataset, refreshHeatmap, resetSelections]);
+    }, [loadDataset, resetSelections]);
 
     const handleCategoryChange = async (key: DatasetKey, category: string) => {
-        if (!base) return;
-        setIsochrone(null);
-        await loadDataset(key, category, base);
+        if (!base || !commune) return;
+        await loadDataset(key, category, base, commune);
     };
 
-    const handleHeatDatasetChange = async (dataset: DatasetKey) => {
-        setHeatSelection({ dataset, category: 'all' });
-        setHeatError(null);
-        setHeatPoints([]);
-        setHeatBreaks([]);
-        await loadHeatCategories(dataset);
-        if (base) {
-            await refreshHeatmap(dataset, 'all', base);
-        }
-    };
-
-    const handleHeatCategoryChange = async (category: string) => {
-        setHeatSelection(prev => ({ ...prev, category }));
-        setHeatError(null);
-        if (base) {
-            await refreshHeatmap(heatSelection.dataset, category, base);
-        }
-    };
-
-    const handleTabChange = useCallback(async (tab: 'selection' | 'heatmap') => {
-        if (tab === activeTab) return;
+    const handleTabChange = (tab: 'selection' | 'heatmap') => {
         setActiveTab(tab);
-        resetDerivedStateKeepBase();
+    };
 
-        if (!base) return;
-        if (tab === 'selection') {
-            await Promise.all((['etude', 'sante', 'sport'] as DatasetKey[])
-                .map(key => loadDataset(key, 'all', base)));
-        } else {
-            const dataset = heatSelection.dataset;
-            await refreshHeatmap(dataset, 'all', base);
-        }
-    }, [activeTab, base, heatSelection.dataset, loadDataset, refreshHeatmap, resetDerivedStateKeepBase]);
-
-    const toggleItemSelection = (datasetKey: DatasetKey, item: GeojsonFetchResponse) => {
-        setIsochrone(null);
-        const itemKey = featureKey(item);
+    const toggleItemSelection = (datasetKey: DatasetKey, item: QueryObject) => {
+        const itemKey = ObjectKeyfromObj(item);
         setDatasets(prev => {
             const current = prev[datasetKey];
             const selectedItems = { ...current.selectedItems };
@@ -267,9 +155,9 @@ function App() {
                 delete selectedItems[itemKey];
                 delete selectedColors[itemKey];
             } else {
-                selectedItems[itemKey] = item;
-                const idx = current.items.findIndex(i => featureKey(i) === itemKey);
+                const idx = current.items.findIndex(i => ObjectKeyfromObj(i) === itemKey);
                 const color = selectedColors[itemKey] ?? current.colors[idx] ?? randomColor();
+                selectedItems[itemKey] = item;
                 selectedColors[itemKey] = color;
             }
             return {
@@ -283,24 +171,12 @@ function App() {
         });
     };
 
-    const generateIsochroneFromSelection = async () => {
-        if (!base) return;
-        const selectedPoints = (Object.keys(datasets) as DatasetKey[])
-            .flatMap(k => Object.values(datasets[k].selectedItems));
-        if (selectedPoints.length === 0) return;
-        const iso = computeIsochrone(base, selectedPoints.map(i => i.coordinates), { paddingKm: 1 });
-        setIsochrone(iso);
-        const distFeatures: CommuneDistanceChoropleth[] = await computeCommuneDistances(selectedPoints);
-        setChoropleth(distFeatures.map(d => d.feature));
-        setChoroplethBreaks(computeBreaks(distFeatures.map(d => d.dist)));
-    };
-
     const communeFeature = useMemo(() => {
         if (!commune) return null;
         return {
             type: 'Feature',
-            properties: commune.properties ?? {},
-            geometry: commune.geometry
+            properties: { nom: commune.name },
+            geometry: convertMultiPolygonToWGS(commune.polygon)
         } as GeoJSONType.Feature;
     }, [commune]);
 
@@ -309,10 +185,11 @@ function App() {
             .flatMap(k => {
                 const ds = datasets[k];
                 return Object.entries(ds.selectedItems).map(([selectedKey, item]) => {
-                    const idx = ds.items.findIndex(i => featureKey(i) === selectedKey);
+                    const idx = ds.items.findIndex(i => ObjectKeyfromObj(i) === selectedKey);
                     const color = ds.selectedColors[selectedKey] ?? ds.colors[idx] ?? randomColor();
+                    const [lon, lat] = item.coordonnees;
                     return {
-                        position: [item.coordinates.latitude, item.coordinates.longitude] as [number, number],
+                        position: [lat, lon] as [number, number],
                         color,
                         label: buildMarkerLabel(k, item)
                     };
@@ -320,37 +197,19 @@ function App() {
             });
     }, [datasets]);
 
-    const isochroneFeatures = useMemo(() => {
-        if (!isochrone) return [];
-        return [{
-            type: 'Feature',
-            properties: { color: '#f97316' },
-            geometry: isochrone
-        }] as GeoJSONType.Feature[];
-    }, [isochrone]);
-
     const selectedCount = useMemo(() => {
         return (Object.keys(datasets) as DatasetKey[])
             .reduce((acc, key) => acc + Object.keys(datasets[key].selectedItems).length, 0);
     }, [datasets]);
 
-    const heatLegendLabel = useMemo(() => {
-        const datasetLabel = labelMap[heatSelection.dataset] ?? heatSelection.dataset;
-        const categoryLabel = heatSelection.category === 'all' ? 'Toutes les catégories' : heatSelection.category;
-        return `${datasetLabel} • ${categoryLabel} (score densité/accès)`;
-    }, [heatSelection]);
-
     const baseMarkerLabel = useMemo(() => {
         if (!base) return 'Point sélectionné';
         const coords = `${base.latitude.toFixed(4)}, ${base.longitude.toFixed(4)}`;
-        if (commune?.properties?.nom) {
-            return `Point sélectionné • ${commune.properties.nom} • ${coords}`;
+        if (commune?.name) {
+            return `Point sélectionné • ${commune.name} • ${coords}`;
         }
         return `Point sélectionné • ${coords}`;
     }, [base, commune]);
-
-    const visibleHeatPoints = activeTab === 'heatmap' ? heatPoints : [];
-    const visibleHeatBreaks = activeTab === 'heatmap' ? heatBreaks : [];
 
     return (
         <div className="app">
@@ -359,15 +218,6 @@ function App() {
                     base={base}
                     baseLabel={baseMarkerLabel}
                     communeFeature={communeFeature}
-                    isochroneFeatures={isochroneFeatures}
-                    choroplethFeatures={choropleth ?? []}
-                    choroplethBreaks={choroplethBreaks}
-                    choroplethColors={choroplethColors}
-                    heatmapPoints={visibleHeatPoints}
-                    heatmapBreaks={visibleHeatBreaks}
-                    heatmapColors={heatmapColors}
-                    heatmapLabel={heatLegendLabel}
-                    heatmapActive={activeTab === 'heatmap'}
                     markerPositions={markerPositions}
                     corsicaCenter={corsicaCenter}
                     onSelect={handleMapClick}
@@ -382,17 +232,8 @@ function App() {
                 hasBase={Boolean(base)}
                 activeTab={activeTab}
                 onTabChange={handleTabChange}
-                heatSelection={heatSelection}
-                heatCategories={heatCategories}
-                heatLoading={heatLoading}
-                heatError={heatError}
-                heatPointCount={heatPoints.length}
-                onChangeHeatDataset={handleHeatDatasetChange}
-                onChangeHeatCategory={handleHeatCategoryChange}
                 onSelectCategory={handleCategoryChange}
                 onToggleItem={toggleItemSelection}
-                onGenerateIsochrone={generateIsochroneFromSelection}
-                canGenerate={Boolean(base) && selectedCount > 0}
                 selectionCount={selectedCount}
             />
         </div>
