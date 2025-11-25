@@ -124,7 +124,6 @@ function HeatmapSection({
     category,
     categories,
     loading,
-    selectionCount,
     onDatasetChange,
     onCategoryChange
 }: {
@@ -140,11 +139,6 @@ function HeatmapSection({
     return (
         <div className="section">
             <div className="section-header">
-                <div className="section-title">
-                    <span>Heatmap</span>
-                    <p className="small">Les clics carte sont désactivés ; choisissez vos filtres.</p>
-                </div>
-                <span className="pill muted">{selectionCount} sélection(s) réinitialisée(s)</span>
             </div>
             <div className="section-body">
                 <label className="field-label">Jeu de données</label>
