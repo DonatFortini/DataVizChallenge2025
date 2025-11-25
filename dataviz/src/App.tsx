@@ -12,6 +12,7 @@ import { ObjectKeyfromObj, Point, toWGS, type Commune, type QueryObject } from '
 const palette = ['#22c55e', '#a855f7', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#6366f1', '#14b8a6'];
 
 type ActiveTab = 'selection' | 'heatmap' | 'profil';
+type ProfilMarker = MarkerInfo;
 
 const generateColors = (count: number): string[] => {
     const colors: string[] = [];
@@ -119,6 +120,7 @@ function App() {
         sante: [],
         sport: []
     });
+    const [profilMarkers, setProfilMarkers] = useState<ProfilMarker[]>([]);
     const [heatmapData, setHeatmapData] = useState<{
         counts: Record<string, number>;
         min: number;
@@ -164,7 +166,10 @@ function App() {
         ensureCommunePolygons().catch(() => {
             setHeatmapError('Impossible de charger la carte des communes.');
         });
-    }, [ensureCommunePolygons]);
+        (['etude', 'sante', 'sport'] as DatasetKey[]).forEach(dataset => {
+            ensureHeatmapCategories(dataset).catch(() => null);
+        });
+    }, [ensureCommunePolygons, ensureHeatmapCategories]);
 
     const loadDataset = useCallback(async (key: DatasetKey, category: string, coords: Point, ctxCommune?: Commune | null) => {
         setDatasets(prev => ({
@@ -183,9 +188,11 @@ function App() {
                 throw new Error('Commune introuvable.');
             }
 
-            const items = await closestTo(coords, communeToUse, key, category);
+            const [items, categories] = await Promise.all([
+                closestTo(coords, communeToUse, key, category),
+                ensureHeatmapCategories(key).catch(() => [])
+            ]);
             const colors = generateColors(items.length);
-            const categories = Array.from(new Set(items.map(i => i.categorie).filter(Boolean)));
 
             setDatasets(prev => ({
                 ...prev,
@@ -304,12 +311,31 @@ function App() {
         }
     }, [ensureCommunePolygons, ensureHeatmapCategories]);
 
+    const clearSelectedItems = () => {
+        setDatasets(prev => {
+            const next: Record<DatasetKey, DatasetState> = { ...prev };
+            (Object.keys(next) as DatasetKey[]).forEach(key => {
+                next[key] = {
+                    ...next[key],
+                    selectedItems: {},
+                    selectedColors: {}
+                };
+            });
+            return next;
+        });
+    };
+
     const handleTabChange = (tab: ActiveTab) => {
+        if (tab === activeTab) return;
+        clearSelectedItems();
         setActiveTab(tab);
         if (tab === 'heatmap') {
             resetSelections();
             setStatus(null);
             setError(null);
+        }
+        if (tab !== 'profil') {
+            setProfilMarkers([]);
         }
     };
 
@@ -362,7 +388,7 @@ function App() {
         } as GeoJSONType.Feature;
     }, [commune]);
 
-    const markerPositions = useMemo<MarkerInfo[]>(() => {
+    const selectionMarkers = useMemo<MarkerInfo[]>(() => {
         return (Object.keys(datasets) as DatasetKey[])
             .flatMap(k => {
                 const ds = datasets[k];
@@ -378,6 +404,13 @@ function App() {
                 });
             });
     }, [datasets]);
+
+    const markerPositions = useMemo<MarkerInfo[]>(() => {
+        if (activeTab === 'profil') {
+            return [...selectionMarkers, ...profilMarkers];
+        }
+        return selectionMarkers;
+    }, [activeTab, profilMarkers, selectionMarkers]);
 
     const selectedCount = useMemo(() => {
         return (Object.keys(datasets) as DatasetKey[])
@@ -471,6 +504,7 @@ function App() {
                 heatmapError={heatmapError}
                 onHeatmapDatasetChange={handleHeatmapDatasetChange}
                 onHeatmapCategoryChange={handleHeatmapCategoryChange}
+                onProfilMarkersChange={setProfilMarkers}
             />
         </div>
     );

@@ -99,6 +99,7 @@ export async function getCommune(pointWGS84: Point): Promise<Commune> {
 
 
 const objectsCache = new Map<string, Promise<QueryObject[]>>();
+const closestCache = new Map<string, Promise<QueryObject[]>>();
 
 function objectsCacheKey(dataset: DatasetKey, category: string): string {
     return `${dataset}::${(category ?? "").toString().toLowerCase()}`;
@@ -159,55 +160,71 @@ export async function closestTo(
     dataset: DatasetKey,
     category: string
 ): Promise<QueryObject[]> {
-    const allObjects: QueryObject[] = await ObjectsIn(dataset, category);
-
-    const byCommune = new Map<string, QueryObject[]>();
-    for (const obj of allObjects) {
-        const list = byCommune.get(obj.commune) ?? [];
-        list.push(obj);
-        byCommune.set(obj.commune, list);
+    const coordsKey = `${pointWGS84.latitude.toFixed(5)},${pointWGS84.longitude.toFixed(5)}`;
+    const cacheKey = `${dataset}::${category.toLowerCase()}::${commune.name}::${coordsKey}`;
+    if (closestCache.has(cacheKey)) {
+        return closestCache.get(cacheKey)!;
     }
 
-    const candidateMap = new Map<string, QueryObject>();
+    const promise = (async () => {
+        const allObjects: QueryObject[] = await ObjectsIn(dataset, category);
 
-    const addCandidate = (obj: QueryObject) => {
-        if (!candidateMap.has(obj.nom)) {
-            candidateMap.set(obj.nom, obj);
-        }
-    };
+            const byCommune = new Map<string, QueryObject[]>();
+            for (const obj of allObjects) {
+                const list = byCommune.get(obj.commune) ?? [];
+                list.push(obj);
+                byCommune.set(obj.commune, list);
+            }
 
-    for (const obj of byCommune.get(commune.name) ?? []) {
-        addCandidate(obj);
-    }
+            const candidateMap = new Map<string, QueryObject>();
 
-    for (const neighbourName of commune.neighbours) {
-        for (const obj of byCommune.get(neighbourName) ?? []) {
-            addCandidate(obj);
-        }
-    }
+            const addCandidate = (obj: QueryObject) => {
+                if (!candidateMap.has(obj.nom)) {
+                    candidateMap.set(obj.nom, obj);
+                }
+            };
 
-    const MIN_CANDIDATES = 10;
-    const MAX_CANDIDATES = 50;
+            for (const obj of byCommune.get(commune.name) ?? []) {
+                addCandidate(obj);
+            }
 
-    if (candidateMap.size < MIN_CANDIDATES) {
-        for (const obj of allObjects) {
-            addCandidate(obj);
-            if (candidateMap.size >= MAX_CANDIDATES) break;
-        }
-    }
+            for (const neighbourName of commune.neighbours) {
+                for (const obj of byCommune.get(neighbourName) ?? []) {
+                    addCandidate(obj);
+                }
+            }
 
-    const candidates = Array.from(candidateMap.values());
+            const MIN_CANDIDATES = 10;
+            const MAX_CANDIDATES = 50;
 
-    const withDistances = await Promise.all(
-        candidates.map(async (obj) => {
-            const targetPoint = new Point(obj.coordonnees);
-            const { distanceKm } = await roadDistanceBetween(pointWGS84, targetPoint);
-            return { obj, distanceKm };
-        })
-    );
+            if (candidateMap.size < MIN_CANDIDATES) {
+                for (const obj of allObjects) {
+                    addCandidate(obj);
+                    if (candidateMap.size >= MAX_CANDIDATES) break;
+                }
+            }
 
-    withDistances.sort((a, b) => a.distanceKm - b.distanceKm);
+            const candidates = Array.from(candidateMap.values());
 
-    const LIMIT = 10;
-    return withDistances.slice(0, LIMIT).map((x) => x.obj);
+            const withDistances = await Promise.all(
+                candidates.map(async (obj) => {
+                    const targetPoint = new Point(obj.coordonnees);
+                    const { distanceKm } = await roadDistanceBetween(pointWGS84, targetPoint);
+                    return { obj, distanceKm };
+                })
+            );
+
+            withDistances.sort((a, b) => a.distanceKm - b.distanceKm);
+
+            const LIMIT = 10;
+        return withDistances.slice(0, LIMIT).map((x) => x.obj);
+    })();
+
+    promise.catch(() => {
+        // allow retry on failure
+        closestCache.delete(cacheKey);
+    });
+
+    closestCache.set(cacheKey, promise);
+    return promise;
 }

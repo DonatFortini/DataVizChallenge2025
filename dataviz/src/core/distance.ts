@@ -4,7 +4,7 @@ const DEFAULT_OSRM_URL =
     (import.meta as any).env?.VITE_OSRM_URL ?? 'https://router.project-osrm.org';
 
 const REQUEST_TIMEOUT_MS = 6000;
-const MAX_CONCURRENT_REQUESTS = 4;
+const MAX_CONCURRENT_REQUESTS = 10;
 const MAX_RETRIES = 2;
 const RETRY_BASE_DELAY_MS = 300;
 const FALLBACK_DISTANCE_KM = 1_000_000;

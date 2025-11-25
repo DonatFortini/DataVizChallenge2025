@@ -197,6 +197,55 @@
     accent-color: #6366f1;
 }
 
+.parcours-step {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0.6rem;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 0.5rem;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.parcours-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.4rem;
+    font-weight: 600;
+}
+
+.parcours-extras {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.extra-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.extra-controls {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.4rem;
+}
+
+.add-btn {
+    padding: 0.45rem 0.7rem;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(99, 102, 241, 0.15);
+    color: #eef2ff;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.add-btn:hover {
+    border-color: rgba(99, 102, 241, 0.35);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+}
+
 .section-body ul {
     list-style: none;
     padding: 0;

@@ -29,4 +29,3 @@ export const initialDatasetState = (): Record<DatasetKey, DatasetState> => ({
     sante: { loading: false, items: [], colors: [], categories: [], selectedCategory: 'all', selectedItems: {}, selectedColors: {}, error: null },
     sport: { loading: false, items: [], colors: [], categories: [], selectedCategory: 'all', selectedItems: {}, selectedColors: {}, error: null }
 });
-
