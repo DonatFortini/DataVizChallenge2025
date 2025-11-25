@@ -7,6 +7,9 @@ import { roadDistanceBetween } from "./distance";
 
 const BASE_URL = (import.meta as any).env?.BASE_URL ?? "/";
 
+const inCorsicaLatRange = (lat: number) => lat >= 40 && lat <= 44.5;
+const inCorsicaLonRange = (lon: number) => lon >= 8 && lon <= 10.5;
+const inCorsicaBounds = (lat: number, lon: number) => inCorsicaLatRange(lat) && inCorsicaLonRange(lon);
 
 
 const geojsonCache = new Map<string, Promise<any>>();
@@ -26,6 +29,32 @@ export async function loadGeoJSON(path: string): Promise<any> {
     return geojsonCache.get(path)!;
 }
 
+function parseCoordinates(raw: unknown): Coordinates {
+    const toNumbers = (values: unknown[]): [number, number] | null => {
+        if (values.length < 2) return null;
+        const first = Number(values[0]);
+        const second = Number(values[1]);
+        if (!Number.isFinite(first) || !Number.isFinite(second)) return null;
+        if (inCorsicaBounds(first, second)) {
+            return [second, first];
+        }
+        if (inCorsicaBounds(second, first)) {
+            return [first, second];
+        }
+        return [first, second];
+    };
+
+    if (typeof raw === "string") {
+        const parts = raw.split(",").map((v) => v.trim());
+        const coords = toNumbers(parts);
+        if (coords) return coords;
+    } else if (Array.isArray(raw)) {
+        const coords = toNumbers(raw);
+        if (coords) return coords;
+    }
+
+    throw new Error(`Invalid coordinates: ${String(raw)}`);
+}
 
 function neighbouringCommunes(communeName: string): string[] {
     const commune = communes.find((c) => c.nom === communeName);
@@ -103,12 +132,13 @@ export async function ObjectsIn(
                         (feature.properties.Categorie ?? "").toString().toLowerCase();
 
                     if (returnAll || featureCategory === normalizedCategory) {
+                        const coords = parseCoordinates(feature.properties.Coordonnées);
                         results.push({
-                            id: ObjectKeyfromProps(feature.properties.Nom, feature.properties.Coordonnées),
+                            id: ObjectKeyfromProps(feature.properties.Nom, coords),
                             nom: feature.properties.Nom,
                             categorie: feature.properties.Categorie,
                             commune: feature.properties.Commune,
-                            coordonnees: feature.properties.Coordonnées as Coordinates, // WGS84
+                            coordonnees: coords, // WGS84 [lon, lat]
                             geometry: feature.geometry as GeoJSON.Point, // Lambert
                         });
                     }
