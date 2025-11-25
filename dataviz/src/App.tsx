@@ -11,6 +11,8 @@ import { ObjectKeyfromObj, Point, toWGS, type Commune, type QueryObject } from '
 
 const palette = ['#22c55e', '#a855f7', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#6366f1', '#14b8a6'];
 
+type ActiveTab = 'selection' | 'heatmap' | 'profil';
+
 const generateColors = (count: number): string[] => {
     const colors: string[] = [];
     let idx = 0;
@@ -107,7 +109,7 @@ function App() {
     const [datasets, setDatasets] = useState<Record<DatasetKey, DatasetState>>(initialDatasetState);
     const [status, setStatus] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<'selection' | 'heatmap'>('selection');
+    const [activeTab, setActiveTab] = useState<ActiveTab>('selection');
     const [communeFeatures, setCommuneFeatures] = useState<GeoJSONType.Feature<GeoJSONType.MultiPolygon>[]>([]);
 
     const [heatmapDataset, setHeatmapDataset] = useState<DatasetKey>('sante');
@@ -302,7 +304,7 @@ function App() {
         }
     }, [ensureCommunePolygons, ensureHeatmapCategories]);
 
-    const handleTabChange = (tab: 'selection' | 'heatmap') => {
+    const handleTabChange = (tab: ActiveTab) => {
         setActiveTab(tab);
         if (tab === 'heatmap') {
             resetSelections();
@@ -422,19 +424,19 @@ function App() {
         return `${heatmapDataset}-${heatmapCategory}-${heatmapData?.min ?? 0}-${heatmapData?.max ?? 0}`;
     }, [activeTab, heatmapCategory, heatmapData?.max, heatmapData?.min, heatmapDataset]);
 
-    const isSelectionMode = activeTab === 'selection';
+    const isInteractiveTab = activeTab !== 'heatmap';
 
     return (
         <div className="app">
             <div className="map-pane">
                 <MapView
-                    base={isSelectionMode ? base : null}
+                    base={isInteractiveTab ? base : null}
                     baseLabel={baseMarkerLabel}
-                    communeFeature={isSelectionMode ? communeFeature : null}
-                    markerPositions={isSelectionMode ? markerPositions : []}
+                    communeFeature={isInteractiveTab ? communeFeature : null}
+                    markerPositions={isInteractiveTab ? markerPositions : []}
                     corsicaCenter={corsicaCenter}
                     onSelect={handleMapClick}
-                    selectionEnabled={isSelectionMode}
+                    selectionEnabled={isInteractiveTab}
                     heatmapLayerKey={heatmapLayerKey}
                     heatmapLayer={activeTab === 'heatmap' && communeFeatures.length > 0 ? {
                         features: communeFeatures,
@@ -453,6 +455,7 @@ function App() {
                 baseLambert={baseLambert}
                 error={error}
                 status={status}
+                basePoint={base}
                 commune={commune}
                 datasets={datasets}
                 hasBase={Boolean(base)}
