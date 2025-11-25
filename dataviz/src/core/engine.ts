@@ -1,4 +1,4 @@
-import { Point, type Commune, type QueryObject } from "./types";
+import { ObjectKeyfromProps, Point, type Commune, type QueryObject } from "./types";
 import { point as turfPoint } from "@turf/helpers";
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { communes } from "./communes.data";
@@ -105,6 +105,7 @@ export async function ObjectsIn(
 
                     if (returnAll || featureCategory === normalizedCategory) {
                         results.push({
+                            id: ObjectKeyfromProps(feature.properties.nom, feature.properties.coordonnees),
                             nom: feature.properties.nom,
                             categorie: feature.properties.categorie,
                             commune: feature.properties.commune,

@@ -2,12 +2,27 @@ import type * as GeoJSON from 'geojson';
 import proj4 from "proj4";
 
 type QueryObject = {
+    id: string;
     nom: string;
     categorie: string;
     commune: string;
-    coordonnees: string;
+    coordonnees: Coordinates;
     geometry: GeoJSON.Point;
 };
+
+function formatCoordinates(coordonnees: Coordinates): string {
+    return `${coordonnees[0].toFixed(6)},${coordonnees[1].toFixed(6)}`;
+}
+
+export function ObjectKeyfromObj(obj: QueryObject): string {
+    return `${obj.nom}:${formatCoordinates(obj.coordonnees)}`;
+}
+
+export function ObjectKeyfromProps(nom: string, coordonnees: Coordinates): string {
+    return `${nom}:${formatCoordinates(coordonnees)}`;
+}
+
+
 
 type Commune = {
     name: string;
