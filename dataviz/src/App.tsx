@@ -8,10 +8,10 @@ import { Sidebar } from './components/Sidebar';
 import { labelMap, type DatasetKey, type DatasetState, initialDatasetState } from './core/datasets';
 import { ObjectsIn, closestTo, getCommune, isInCorsica, loadGeoJSON } from './core/engine';
 import { ObjectKeyfromObj, Point, toWGS, type Commune, type QueryObject } from './core/types';
+import { type ActiveTab } from './core/tabs';
 
 const palette = ['#22c55e', '#a855f7', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#6366f1', '#14b8a6'];
 
-type ActiveTab = 'anamorphose' | 'heatmap' | 'profil';
 type ProfilMarker = MarkerInfo;
 
 const generateColors = (count: number): string[] => {

@@ -172,7 +172,6 @@ export async function closestTo(
 
     const promise = (async () => {
         const allObjects: QueryObject[] = await ObjectsIn(dataset, category);
-        console.log(`Found ${allObjects.length} objects in dataset "${dataset}" with category "${category}"`);
         // Deduplicate
         const deduped: QueryObject[] = [];
         const seen = new Set<string>();
@@ -183,7 +182,6 @@ export async function closestTo(
                 deduped.push(obj);
             }
         }
-        console.log(`Deduplicated to ${deduped.length} objects`);
         // Group by commune
         const byCommune = new Map<string, QueryObject[]>();
         for (const obj of deduped) {
@@ -191,7 +189,6 @@ export async function closestTo(
             list.push(obj);
             byCommune.set(obj.commune, list);
         }
-        console.log(`Grouped objects by commune: ${byCommune.size} communes`);
         const MAX_CANDIDATES = 25;
         const MAX_OSRM_BATCH = 50; // Keep headroom for filtering
 
@@ -230,7 +227,6 @@ export async function closestTo(
 
         const LIMIT = 10;
         const osrmTargets = candidates.slice(0, Math.min(MAX_OSRM_BATCH, Math.max(MAX_CANDIDATES, candidates.length)));
-        console.log(`Haversine pre-filtered to ${osrmTargets.length} candidates for OSRM`);
 
         const points = osrmTargets.map((c) => new Point(c.obj.coordonnees));
         const distances = await roadDistancesFrom(pointWGS84, points);

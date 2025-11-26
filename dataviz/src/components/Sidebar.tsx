@@ -7,8 +7,7 @@ import { closestTo } from '../core/engine';
 import { HeatmapSection } from './HeatmapSection';
 import { AnamorphoseSection } from './AnamorphoseSection';
 import { PARCOURS_CONFIG, PARCOURS_STEPS, type ParcoursResult, type ParcoursStepKey, ProfilSection, getAccessibilityLevel } from './ProfilSection';
-
-type ActiveTab = 'anamorphose' | 'heatmap' | 'profil';
+import type { ActiveTab } from '../core/tabs';
 const SPEED_KMH = 50;
 
 type SidebarProps = {
@@ -36,7 +35,6 @@ type SidebarProps = {
 };
 
 export function Sidebar({
-    baseLambert,
     error,
     status,
     basePoint,
@@ -61,7 +59,7 @@ export function Sidebar({
     const headerText = activeTab === 'anamorphose'
         ? 'Cliquez sur la carte pour sélectionner un point et composer l’anamorphose.'
         : activeTab === 'heatmap'
-            ? 'Mode heatmap : choisissez un jeu de données et une catégorie. Les clics sur la carte sont désactivés.'
+            ? 'Mode heatmap : choisissez un jeu de données et une catégorie.'
             : 'Parcours d’opportunités : suivez chaque étape de vie et ajoutez vos besoins.';
 
     const buildEmptyExtras = () => ({
@@ -134,34 +132,45 @@ export function Sidebar({
         setProfilError(null);
         setProfilNeedsDirty(false);
         const acc: ParcoursResult[] = [];
+        const cache = new Map<string, ParcoursResult>();
         try {
             for (const need of allNeeds) {
-                let best: QueryObject | null = null;
-                try {
-                    const list = await closestTo(basePoint, commune, need.domain, need.category);
-                    best = list[0] ?? null;
-                } catch {
-                    best = null;
-                }
-                let minutes: number | null = null;
-                if (best) {
+                const key = `${need.domain}::${need.category}`.toLowerCase();
+                if (!cache.has(key)) {
+                    let best: QueryObject | null = null;
                     try {
-                        const target = new Point(best.coordonnees);
-                        const { distanceKm } = await roadDistanceBetween(basePoint, target);
-                        const safeKm = distanceKm >= 100000 ? null : distanceKm;
-                        minutes = safeKm != null ? Math.round((safeKm / SPEED_KMH) * 60) : null;
+                        const list = await closestTo(basePoint, commune, need.domain, need.category);
+                        best = list[0] ?? null;
                     } catch {
-                        minutes = null;
+                        best = null;
                     }
+                    let minutes: number | null = null;
+                    if (best) {
+                        try {
+                            const target = new Point(best.coordonnees);
+                            const { distanceKm } = await roadDistanceBetween(basePoint, target);
+                            const safeKm = distanceKm >= 100000 ? null : distanceKm;
+                            minutes = safeKm != null ? Math.round((safeKm / SPEED_KMH) * 60) : null;
+                        } catch {
+                            minutes = null;
+                        }
+                    }
+                    const accessibility = minutes != null ? getAccessibilityLevel(minutes) : null;
+                    cache.set(key, {
+                        step: need.step,
+                        domain: need.domain,
+                        category: need.category,
+                        item: best,
+                        minutes,
+                        accessibility
+                    });
                 }
-                const accessibility = minutes != null ? getAccessibilityLevel(minutes) : null;
+                const cached = cache.get(key)!;
                 const result: ParcoursResult = {
+                    ...cached,
                     step: need.step,
                     domain: need.domain,
-                    category: need.category,
-                    item: best,
-                    minutes,
-                    accessibility
+                    category: need.category
                 };
                 acc.push(result);
                 if (lastRunRef.current === runId) {
@@ -221,9 +230,6 @@ export function Sidebar({
             <header>
                 <h1>Carte de la vie en Corse</h1>
                 <p>{headerText}</p>
-                {baseLambert && (
-                    <p className="small">Lambert: x {baseLambert.x.toFixed(0)} | y {baseLambert.y.toFixed(0)}</p>
-                )}
             </header>
 
             <div className="tabs">

@@ -2,8 +2,6 @@ import { useMemo, useState } from 'react';
 import type { DatasetKey } from '../core/datasets';
 import type { Commune, QueryObject } from '../core/types';
 import { Point } from '../core/types';
-
-export type ActiveTab = 'anamorphose' | 'heatmap' | 'profil';
 export type AccessLevel = { label: string; color: string; icon: string };
 export type ParcoursStepKey = 'enfance' | 'adolescence' | 'adulte';
 export type ParcoursResult = {
@@ -74,8 +72,6 @@ type ProfilSectionProps = {
 };
 
 export function ProfilSection({
-    basePoint,
-    commune,
     hasBase,
     speedKmh,
     extraNeeds,
@@ -92,8 +88,6 @@ export function ProfilSection({
     onRunAnalysis
 }: ProfilSectionProps) {
     const [focusedStep, setFocusedStep] = useState<ParcoursStepKey>('enfance');
-    const coordText = basePoint ? `${basePoint.latitude.toFixed(4)}, ${basePoint.longitude.toFixed(4)}` : null;
-
     const averageMinutes = useMemo(() => {
         const valid = results.map(r => r.minutes).filter((m): m is number => m != null && Number.isFinite(m));
         if (!valid.length) return null;
@@ -195,10 +189,6 @@ export function ProfilSection({
                     <span>Parcours d&apos;opportunités</span>
                 </div>
                 <div className="section-body">
-                    {commune && (
-                        <p className="small">Commune : {commune.name}</p>
-                    )}
-                    {coordText && <p className="small muted">Coordonnées : {coordText}</p>}
                     {!hasBase && <p className="small">Sélectionnez un point sur la carte pour préparer l’analyse.</p>}
 
                     <div className="profil-actions">
@@ -222,7 +212,7 @@ export function ProfilSection({
                             </div>
                             {results.map(result => {
                                 const serviceLabel = result.item
-                                    ? `${result.item.nom}${result.item.commune ? ` — ${result.item.commune}` : ''}`
+                                    ? result.item.nom
                                     : 'Aucun service';
                                 const stepLabel = PARCOURS_CONFIG[result.step].label;
                                 const domainLabel = result.domain === 'etude' ? 'Éducation' : result.domain === 'sante' ? 'Santé' : 'Sport';

@@ -9,7 +9,7 @@ import type { DatasetKey } from './core/datasets';
 // Patch the hook in dev to force a fallback semver and avoid the "Invalid argument not valid semver" crash.
 if (import.meta.env.DEV && typeof window !== 'undefined') {
   const hook = (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
-  const fixRenderer = (id: unknown, renderer: any) => {
+  const fixRenderer = (_id: unknown, renderer: any) => {
     if (renderer && (!renderer.version || typeof renderer.version !== 'string' || !renderer.version.trim())) {
       renderer.version = '0.0.0';
     }
