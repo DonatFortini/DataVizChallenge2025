@@ -36,6 +36,7 @@ type Commune = {
     polygon: GeoJSON.MultiPolygon;
 };
 
+// Coordinates are always stored as [latitude, longitude] in WGS84 unless otherwise noted.
 type Coordinates = [number, number];
 interface CoordinateTrait {
     toLambert(): Coordinates;
@@ -50,18 +51,19 @@ class Point implements CoordinateTrait {
 
     constructor(tuple: Coordinates) {
         this.tuple = tuple;
-        this.latitude = tuple[1];
-        this.longitude = tuple[0];
+        this.latitude = tuple[0];
+        this.longitude = tuple[1];
     }
     toLambert(): Coordinates {
-        const [lon, lat] = this.tuple;
+        const [lat, lon] = this.tuple;
         const point2154 = proj4("EPSG:4326", "EPSG:2154", [lon, lat]);
         return [point2154[0], point2154[1]];
     }
     toWGS(): Coordinates {
         const [x, y] = this.tuple;
         const point4326 = proj4("EPSG:2154", "EPSG:4326", [x, y]);
-        return [point4326[0], point4326[1]];
+        // Return as [lat, lon] to match the app-wide convention.
+        return [point4326[1], point4326[0]];
     }
 }
 

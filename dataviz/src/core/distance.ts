@@ -4,8 +4,8 @@ const DEFAULT_OSRM_URL =
     (import.meta as any).env?.VITE_OSRM_URL ?? 'https://router.project-osrm.org';
 
 const REQUEST_TIMEOUT_MS = 10000; // Increased to 10s
-const MAX_CONCURRENT_REQUESTS = 1; // CRITICAL: Only 1 concurrent request for public OSRM TODO : test that
-const TABLE_MAX_COORDS = 35; // Reduced to 20 to avoid URL length issues
+const MAX_CONCURRENT_REQUESTS = 1; // CRITICAL: Only 1 concurrent request for public 
+const TABLE_MAX_COORDS = 50; // Allow larger batches; upstream filtering limits load
 const MAX_RETRIES = 3; // Increased retries
 const RETRY_BASE_DELAY_MS = 1000; // Longer delays between retries
 export const FALLBACK_DISTANCE_KM = 1_000_000;

@@ -11,7 +11,7 @@ import { ObjectKeyfromObj, Point, toWGS, type Commune, type QueryObject } from '
 
 const palette = ['#22c55e', '#a855f7', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#6366f1', '#14b8a6'];
 
-type ActiveTab = 'selection' | 'heatmap' | 'profil';
+type ActiveTab = 'anamorphose' | 'heatmap' | 'profil';
 type ProfilMarker = MarkerInfo;
 
 const generateColors = (count: number): string[] => {
@@ -42,7 +42,7 @@ const convertMultiPolygonToWGS = (polygon: GeoJSONType.MultiPolygon): GeoJSONTyp
     coordinates: polygon.coordinates.map(poly =>
         poly.map(ring =>
             ring.map(coord => {
-                const [lon, lat] = toWGS(coord as [number, number]);
+                const [lat, lon] = toWGS(coord as [number, number]);
                 return [lon, lat];
             })
         )
@@ -395,7 +395,7 @@ function App() {
                 return Object.entries(ds.selectedItems).map(([selectedKey, item]) => {
                     const idx = ds.items.findIndex(i => ObjectKeyfromObj(i) === selectedKey);
                     const color = ds.selectedColors[selectedKey] ?? ds.colors[idx] ?? randomColor();
-                    const [lon, lat] = item.coordonnees;
+                    const [lat, lon] = item.coordonnees;
                     return {
                         position: [lat, lon] as [number, number],
                         color,
@@ -496,6 +496,7 @@ function App() {
                 onTabChange={handleTabChange}
                 onSelectCategory={handleCategoryChange}
                 onToggleItem={toggleItemSelection}
+                onResetSelections={clearSelectedItems}
                 selectionCount={selectedCount}
                 heatmapDataset={heatmapDataset}
                 heatmapCategory={heatmapCategory}

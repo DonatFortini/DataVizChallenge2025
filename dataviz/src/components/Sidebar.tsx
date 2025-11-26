@@ -5,11 +5,11 @@ import { roadDistanceBetween } from '../core/distance';
 import type { MarkerInfo } from './MapView';
 import { closestTo } from '../core/engine';
 import { HeatmapSection } from './HeatmapSection';
-import { SelectionSection } from './SelectionSection';
+import { AnamorphoseSection } from './AnamorphoseSection';
 import { PARCOURS_CONFIG, PARCOURS_STEPS, type ParcoursResult, type ParcoursStepKey, ProfilSection, getAccessibilityLevel } from './ProfilSection';
 
-type ActiveTab = 'selection' | 'heatmap' | 'profil';
-const SPEED_KMH = 40;
+type ActiveTab = 'anamorphose' | 'heatmap' | 'profil';
+const SPEED_KMH = 50;
 
 type SidebarProps = {
     baseLambert: { x: number; y: number } | null;
@@ -23,6 +23,7 @@ type SidebarProps = {
     onTabChange: (tab: ActiveTab) => void;
     onSelectCategory: (key: DatasetKey, category: string) => void;
     onToggleItem: (key: DatasetKey, item: QueryObject) => void;
+    onResetSelections: () => void;
     selectionCount: number;
     heatmapDataset: DatasetKey;
     heatmapCategory: string;
@@ -46,6 +47,7 @@ export function Sidebar({
     onTabChange,
     onSelectCategory,
     onToggleItem,
+    onResetSelections,
     selectionCount,
     heatmapDataset,
     heatmapCategory,
@@ -56,8 +58,8 @@ export function Sidebar({
     onHeatmapCategoryChange,
     onProfilMarkersChange
 }: SidebarProps) {
-    const headerText = activeTab === 'selection'
-        ? 'Cliquez sur la carte pour sélectionner un point.'
+    const headerText = activeTab === 'anamorphose'
+        ? 'Cliquez sur la carte pour sélectionner un point et composer l’anamorphose.'
         : activeTab === 'heatmap'
             ? 'Mode heatmap : choisissez un jeu de données et une catégorie. Les clics sur la carte sont désactivés.'
             : 'Parcours d’opportunités : suivez chaque étape de vie et ajoutez vos besoins.';
@@ -80,6 +82,11 @@ export function Sidebar({
     const [profilLoading, setProfilLoading] = useState(false);
     const [profilError, setProfilError] = useState<string | null>(null);
     const [profilNeedsDirty, setProfilNeedsDirty] = useState(true);
+    const [collapsed, setCollapsed] = useState<Record<DatasetKey, boolean>>({
+        etude: false,
+        sante: false,
+        sport: false
+    });
     const lastRunRef = useRef(0);
 
     const categoriesByDomain: Record<DatasetKey, readonly string[]> = useMemo(() => ({
@@ -121,11 +128,14 @@ export function Sidebar({
     const runProfilAnalysis = useCallback(async () => {
         if (!hasBase || !basePoint || !commune) return;
         const runId = ++lastRunRef.current;
+        setParcoursResults([]);
+        onProfilMarkersChange([]);
         setProfilLoading(true);
         setProfilError(null);
         setProfilNeedsDirty(false);
+        const acc: ParcoursResult[] = [];
         try {
-            const tasks = allNeeds.map(async need => {
+            for (const need of allNeeds) {
                 let best: QueryObject | null = null;
                 try {
                     const list = await closestTo(basePoint, commune, need.domain, need.category);
@@ -145,22 +155,26 @@ export function Sidebar({
                     }
                 }
                 const accessibility = minutes != null ? getAccessibilityLevel(minutes) : null;
-                return {
+                const result: ParcoursResult = {
                     step: need.step,
                     domain: need.domain,
                     category: need.category,
                     item: best,
                     minutes,
                     accessibility
-                } as ParcoursResult;
-            });
-            const results = await Promise.all(tasks);
+                };
+                acc.push(result);
+                if (lastRunRef.current === runId) {
+                    setParcoursResults([...acc]);
+                } else {
+                    return;
+                }
+            }
             if (lastRunRef.current === runId) {
-                setParcoursResults(results);
-                const markers: MarkerInfo[] = results
+                const markers: MarkerInfo[] = acc
                     .filter(r => r.item)
                     .map(r => {
-                        const [lon, lat] = (r.item as QueryObject).coordonnees;
+                        const [lat, lon] = (r.item as QueryObject).coordonnees;
                         const color = r.domain === 'etude' ? '#22c55e' : r.domain === 'sante' ? '#ef4444' : '#06b6d4';
                         const stepLabel = PARCOURS_CONFIG[r.step].label;
                         const domainLabel = r.domain === 'etude' ? 'Éducation' : r.domain === 'sante' ? 'Santé' : 'Sport';
@@ -182,6 +196,13 @@ export function Sidebar({
             }
         }
     }, [allNeeds, basePoint, commune, hasBase, onProfilMarkersChange]);
+
+    useEffect(() => {
+        if (activeTab !== 'profil') return;
+        if (!hasBase || !basePoint || !commune) return;
+        if (profilLoading || !profilNeedsDirty) return;
+        runProfilAnalysis().catch(() => null);
+    }, [activeTab, basePoint, commune, hasBase, profilLoading, profilNeedsDirty, runProfilAnalysis]);
 
     const accessibilityCounts = useMemo(() => {
         return parcoursResults.reduce(
@@ -213,10 +234,10 @@ export function Sidebar({
                     Heatmap
                 </button>
                 <button
-                    className={activeTab === 'selection' ? 'tab active' : 'tab'}
-                    onClick={() => onTabChange('selection')}
+                    className={activeTab === 'anamorphose' ? 'tab active' : 'tab'}
+                    onClick={() => onTabChange('anamorphose')}
                 >
-                    Sélections
+                    Anamorphose
                 </button>
                 <button
                     className={activeTab === 'profil' ? 'tab active' : 'tab'}
@@ -231,18 +252,32 @@ export function Sidebar({
             {activeTab === 'heatmap' && heatmapError && <div className="alert error">{heatmapError}</div>}
             {commune && <CommuneCard commune={commune} />}
 
-            {activeTab === 'selection' && (
+            {activeTab === 'anamorphose' && (
                 <div className="sections">
                     {(Object.keys(datasets) as DatasetKey[]).map(key => (
-                        <SelectionSection
+                        <AnamorphoseSection
                             key={key}
                             datasetKey={key}
                             data={datasets[key]}
                             hasBase={hasBase}
                             onSelectCategory={onSelectCategory}
                             onToggleItem={onToggleItem}
+                            collapsed={collapsed[key]}
+                            onToggleCollapse={(k) => setCollapsed(prev => ({ ...prev, [k]: !prev[k] }))}
                         />
                     ))}
+                    <div className="section reset-row">
+                        <div className="section-body">
+                            <button
+                                className="reset-button"
+                                type="button"
+                                onClick={onResetSelections}
+                                disabled={selectionCount === 0}
+                            >
+                                Réinitialiser les sélections ({selectionCount})
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -263,6 +298,7 @@ export function Sidebar({
                     basePoint={basePoint}
                     commune={commune}
                     hasBase={hasBase}
+                    speedKmh={SPEED_KMH}
                     extraNeeds={extraNeeds}
                     selectionDraft={selectionDraft}
                     categoriesByDomain={categoriesByDomain}

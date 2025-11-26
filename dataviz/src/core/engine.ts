@@ -9,6 +9,8 @@ const BASE_URL = (import.meta as any).env?.BASE_URL ?? "/";
 
 const geojsonCache = new Map<string, Promise<any>>();
 
+const EARTH_RADIUS_KM = 6371;
+
 export async function loadGeoJSON(path: string): Promise<any> {
     if (!geojsonCache.has(path)) {
         geojsonCache.set(
@@ -43,6 +45,23 @@ function parseCoordinates(raw: unknown): Coordinates {
     }
 
     throw new Error(`Invalid coordinates: ${String(raw)}`);
+}
+
+function haversineKm(a: Point, b: Point): number {
+    const toRad = (v: number) => (v * Math.PI) / 180;
+    const dLat = toRad(b.latitude - a.latitude);
+    const dLon = toRad(b.longitude - a.longitude);
+    const lat1 = toRad(a.latitude);
+    const lat2 = toRad(b.latitude);
+
+    const sinLat = Math.sin(dLat / 2);
+    const sinLon = Math.sin(dLon / 2);
+
+    const h =
+        sinLat * sinLat +
+        Math.cos(lat1) * Math.cos(lat2) * sinLon * sinLon;
+
+    return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
 function neighbouringCommunes(communeName: string): string[] {
@@ -173,54 +192,57 @@ export async function closestTo(
             byCommune.set(obj.commune, list);
         }
         console.log(`Grouped objects by commune: ${byCommune.size} communes`);
-        const CHUNK_SIZE = 35; // Match distance.ts TABLE_MAX_COORDS
+        const MAX_CANDIDATES = 25;
+        const MAX_OSRM_BATCH = 50; // Keep headroom for filtering
+
+        type Candidate = { obj: QueryObject; approxKm: number };
+        const candidates: Candidate[] = [];
         const visited = new Set<string>();
-        const withDistances: Array<{ obj: QueryObject; distanceKm: number }> = [];
 
-        const processBatch = async (batch: QueryObject[]) => {
-            if (!batch.length) return;
-            console.log(`Processing batch of ${batch.length} objects for distance calculation`);
-            const points = batch.map((obj) => new Point(obj.coordonnees));
-            const distances = await roadDistancesFrom(pointWGS84, points);
-            for (let i = 0; i < batch.length; i++) {
-                withDistances.push({
-                    obj: batch[i],
-                    distanceKm: distances[i] ?? FALLBACK_DISTANCE_KM,
-                });
-            }
-        };
-
-        const priority: QueryObject[] = [];
-        const mark = (obj: QueryObject) => {
-            const key = ObjectKeyfromProps(obj.nom, obj.coordonnees);
-            if (!visited.has(key)) {
+        const pushTier = (list: QueryObject[]) => {
+            for (const obj of list) {
+                const key = ObjectKeyfromProps(obj.nom, obj.coordonnees);
+                if (visited.has(key)) continue;
                 visited.add(key);
-                priority.push(obj);
+                const approxKm = haversineKm(pointWGS84, new Point(obj.coordonnees));
+                candidates.push({ obj, approxKm });
+            }
+            candidates.sort((a, b) => a.approxKm - b.approxKm);
+            if (candidates.length > MAX_OSRM_BATCH) {
+                candidates.length = MAX_OSRM_BATCH;
             }
         };
 
-        // Priority: Same commune + neighbors
-        for (const obj of byCommune.get(commune.name) ?? []) mark(obj);
-        for (const neighbour of commune.neighbours) {
-            for (const obj of byCommune.get(neighbour) ?? []) mark(obj);
+        // Tier 1: same commune
+        pushTier(byCommune.get(commune.name) ?? []);
+        if (candidates.length < MAX_CANDIDATES) {
+            // Tier 2: neighbours
+            for (const neighbour of commune.neighbours) {
+                pushTier(byCommune.get(neighbour) ?? []);
+                if (candidates.length >= MAX_CANDIDATES) break;
+            }
+        }
+        if (candidates.length < MAX_CANDIDATES) {
+            // Tier 3: everything else, filtered by haversine
+            const remaining = deduped.filter((obj) => !visited.has(ObjectKeyfromProps(obj.nom, obj.coordonnees)));
+            pushTier(remaining);
         }
 
-        // Process priority tier (commune + neighbours)
-        for (let start = 0; start < priority.length; start += CHUNK_SIZE) {
-            await processBatch(priority.slice(start, start + CHUNK_SIZE));
-        }
+        const LIMIT = 10;
+        const osrmTargets = candidates.slice(0, Math.min(MAX_OSRM_BATCH, Math.max(MAX_CANDIDATES, candidates.length)));
+        console.log(`Haversine pre-filtered to ${osrmTargets.length} candidates for OSRM`);
 
-        // Process remaining objects
-        const remaining = deduped.filter((obj) => {
-            const key = ObjectKeyfromProps(obj.nom, obj.coordonnees);
-            return !visited.has(key);
-        });
+        const points = osrmTargets.map((c) => new Point(c.obj.coordonnees));
+        const distances = await roadDistancesFrom(pointWGS84, points);
 
-        for (let start = 0; start < remaining.length; start += CHUNK_SIZE) {
-            await processBatch(remaining.slice(start, start + CHUNK_SIZE));
-        }
+        const withDistances: Array<{ obj: QueryObject; distanceKm: number; approxKm: number }> = osrmTargets.map(
+            (c, idx) => ({
+                obj: c.obj,
+                distanceKm: distances[idx] ?? FALLBACK_DISTANCE_KM,
+                approxKm: c.approxKm,
+            })
+        );
 
-        // Sort by distance
         const hasValid = withDistances.some(({ distanceKm }) => distanceKm < FALLBACK_DISTANCE_KM);
 
         withDistances.sort((a, b) => {
@@ -232,10 +254,11 @@ export async function closestTo(
                 if (!aInvalid && bInvalid) return -1;
             }
 
-            return a.distanceKm - b.distanceKm;
+            const distA = aInvalid ? a.approxKm : a.distanceKm;
+            const distB = bInvalid ? b.approxKm : b.distanceKm;
+            return distA - distB;
         });
 
-        const LIMIT = 10;
         return withDistances.slice(0, LIMIT).map((x) => x.obj);
     })();
 

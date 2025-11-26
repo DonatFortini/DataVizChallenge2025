@@ -3,7 +3,7 @@ import type { DatasetKey } from '../core/datasets';
 import type { Commune, QueryObject } from '../core/types';
 import { Point } from '../core/types';
 
-export type ActiveTab = 'selection' | 'heatmap' | 'profil';
+export type ActiveTab = 'anamorphose' | 'heatmap' | 'profil';
 export type AccessLevel = { label: string; color: string; icon: string };
 export type ParcoursStepKey = 'enfance' | 'adolescence' | 'adulte';
 export type ParcoursResult = {
@@ -32,16 +32,16 @@ export const PARCOURS_CONFIG: Record<ParcoursStepKey, { label: string; etude: st
         label: "Adulte",
         etude: ["UNIVERSITE"],
         sante: ["Cardiologue"],
-        sport: ["Salle de musculation/cardio training", "Parcours sportif/santé"]
+        sport: ["Salle de musculation/cardiotraining", "Parcours sportif/santé"]
     }
 };
 export const PARCOURS_STEPS: ParcoursStepKey[] = ['enfance', 'adolescence', 'adulte'];
 const DOMAIN_LABELS: Record<DatasetKey, string> = { etude: 'Éducation', sante: 'Santé', sport: 'Sport' };
 
 function accessibilityLevel(minutes: number): AccessLevel {
-    if (minutes < 15) return { label: 'Bon accès', color: 'green', icon: '🟢' };
-    if (minutes <= 30) return { label: 'Accès moyen', color: 'orange', icon: '🟠' };
-    return { label: 'Accès difficile', color: 'red', icon: '🔴' };
+    if (minutes < 15) return { label: 'Bon', color: 'green', icon: '🟢' };
+    if (minutes <= 30) return { label: 'Moyen', color: 'orange', icon: '🟠' };
+    return { label: 'Difficile', color: 'red', icon: '🔴' };
 }
 
 function formatMinutes(minutes: number | null): string {
@@ -58,6 +58,7 @@ type ProfilSectionProps = {
     basePoint: Point | null;
     commune: Commune | null;
     hasBase: boolean;
+    speedKmh: number;
     extraNeeds: Record<ParcoursStepKey, { etude: string[]; sante: string[]; sport: string[] }>;
     selectionDraft: Record<ParcoursStepKey, { etude: string; sante: string; sport: string }>;
     categoriesByDomain: Record<DatasetKey, readonly string[]>;
@@ -76,6 +77,7 @@ export function ProfilSection({
     basePoint,
     commune,
     hasBase,
+    speedKmh,
     extraNeeds,
     selectionDraft,
     categoriesByDomain,
@@ -206,6 +208,7 @@ export function ProfilSection({
                         {needsDirty && hasBase && !loading && (
                             <p className="small muted">Des changements sont en attente d&apos;analyse.</p>
                         )}
+                        <p className="small muted">Rappel : temps estimés à {speedKmh} km/h en voiture.</p>
                     </div>
                     {error && <p className="small error-text">{error}</p>}
 
@@ -225,8 +228,13 @@ export function ProfilSection({
                                 const domainLabel = result.domain === 'etude' ? 'Éducation' : result.domain === 'sante' ? 'Santé' : 'Sport';
                                 return (
                                     <div className="profil-row" key={`${result.step}-${result.domain}-${result.category}`}>
-                                        <span>{stepLabel} — {domainLabel}<div className="muted">{result.category}</div></span>
-                                        <span>{serviceLabel}</span>
+                                        <span className="profil-need">
+                                            <span className="profil-need-title">{stepLabel} — {domainLabel}</span>
+                                            <span className="small muted">{result.category}</span>
+                                        </span>
+                                        <span className="profil-service">
+                                            <span className="profil-service-title">{serviceLabel}</span>
+                                        </span>
                                         <span>{formatMinutes(result.minutes)}</span>
                                         <span>
                                             {result.accessibility

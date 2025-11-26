@@ -2,20 +2,33 @@ import type { DatasetKey, DatasetState } from '../core/datasets';
 import { labelMap } from '../core/datasets';
 import { ObjectKeyfromObj, type QueryObject } from '../core/types';
 
-type DatasetSectionProps = {
+type AnamorphoseSectionProps = {
     datasetKey: DatasetKey;
     data: DatasetState;
     hasBase: boolean;
     onSelectCategory: (key: DatasetKey, category: string) => void;
     onToggleItem: (key: DatasetKey, item: QueryObject) => void;
+    collapsed: boolean;
+    onToggleCollapse: (key: DatasetKey) => void;
 };
 
-export function SelectionSection({ datasetKey, data, hasBase, onSelectCategory, onToggleItem }: DatasetSectionProps) {
+export function AnamorphoseSection({
+    datasetKey,
+    data,
+    hasBase,
+    onSelectCategory,
+    onToggleItem,
+    collapsed,
+    onToggleCollapse
+}: AnamorphoseSectionProps) {
     const categories = ['all', ...data.categories];
     return (
         <div className="section">
-            <div className="section-header">
-                <span>{labelMap[datasetKey]}</span>
+            <button className="section-header" onClick={() => onToggleCollapse(datasetKey)} type="button">
+                <span className="section-title">
+                    <span className="caret">{collapsed ? '▸' : '▾'}</span>
+                    {labelMap[datasetKey]}
+                </span>
                 <select
                     className="section-select"
                     value={data.selectedCategory}
@@ -26,7 +39,8 @@ export function SelectionSection({ datasetKey, data, hasBase, onSelectCategory, 
                         <option key={cat} value={cat}>{cat === 'all' ? 'Toutes les catégories' : cat}</option>
                     ))}
                 </select>
-            </div>
+            </button>
+            {!collapsed && (
             <div className="section-body">
                 {!hasBase && <p className="small">Cliquez sur la carte pour commencer.</p>}
                 {hasBase && data.loading && <p className="small">Chargement...</p>}
@@ -63,6 +77,7 @@ export function SelectionSection({ datasetKey, data, hasBase, onSelectCategory, 
                     })}
                 </ul>
             </div>
+            )}
         </div>
     );
 }

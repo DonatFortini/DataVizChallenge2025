@@ -25,7 +25,7 @@ type ClickHandlerProps = { onSelect: (coords: Point) => void };
 function ClickHandler({ onSelect }: ClickHandlerProps) {
     useMapEvents({
         click: (e) => {
-            onSelect(new Point([e.latlng.lng, e.latlng.lat]));
+            onSelect(new Point([e.latlng.lat, e.latlng.lng]));
         }
     });
     return null;
