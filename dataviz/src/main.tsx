@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import { Home } from './Home';
 import { ObjectsIn, loadGeoJSON } from './core/engine';
-import type { DatasetKey } from './core/datasets';
+import type { DatasetKey } from './core/types';
 
 // React DevTools can choke on renderers that report an empty version (seen with some 3D libs).
 // Patch the hook in dev to force a fallback semver and avoid the "Invalid argument not valid semver" crash.

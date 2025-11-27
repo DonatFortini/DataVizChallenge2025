@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { DatasetKey } from '../core/datasets';
-import type { Commune, QueryObject } from '../core/types';
+import type { Commune, QueryObject, DatasetKey } from '../core/types';
 import { Point } from '../core/types';
 export type AccessLevel = { label: string; color: string; icon: string };
 export type ParcoursStepKey = 'enfance' | 'adolescence' | 'adulte';

@@ -117,6 +117,9 @@ type AnamorphoseLayer = {
     maxKm: number;
     details: Array<{ label: string; km: number }>;
     kmByCommune: Record<string, number>;
+    durationByCommune: Record<string, number>;
+    maxDuration?: number;
+    minDuration?: number;
 };
 
 type MapViewProps = {
@@ -145,8 +148,6 @@ export function MapView({
     heatmapLayer,
     heatmapLayerKey,
     anamorphoseLayer,
-    anamorphoseLoading = false,
-    anamorphoseError = null
 }: MapViewProps) {
     const canSelect = selectionEnabled !== false;
 
@@ -227,8 +228,8 @@ export function MapView({
                         }}
                     />
                 )}
-            <LayerGroup>
-                {markerPositions.map((m, idx) => (
+                <LayerGroup>
+                    {markerPositions.map((m, idx) => (
                         <Marker key={`m-${idx}`} position={m.position} icon={createColoredIcon(m.color)}>
                             {m.label && (
                                 <Tooltip opacity={0.95} direction="top" offset={[0, -4]}>

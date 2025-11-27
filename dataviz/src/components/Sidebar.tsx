@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Point, type Commune, type QueryObject } from '../core/types';
-import type { DatasetKey, DatasetState } from '../core/datasets';
+import { Point, type ActiveTab, type Commune, type DatasetKey, type DatasetState, type QueryObject } from '../core/types';
+
 import { roadDistanceBetween } from '../core/distance';
 import type { MarkerInfo } from './MapView';
 import { closestTo } from '../core/engine';
 import { HeatmapSection } from './HeatmapSection';
 import { AnamorphoseSection } from './AnamorphoseSection';
 import { PARCOURS_CONFIG, PARCOURS_STEPS, type ParcoursResult, type ParcoursStepKey, ProfilSection, getAccessibilityLevel } from './ProfilSection';
-import type { ActiveTab } from '../core/tabs';
+
 const SPEED_KMH = 50;
 
 type SidebarProps = {
@@ -154,9 +154,9 @@ export function Sidebar({
                     if (best) {
                         try {
                             const target = new Point(best.coordonnees);
-                        const { distanceKm, durationMin } = await roadDistanceBetween(basePoint, target);
-                        const safeKm = distanceKm >= 100000 ? null : distanceKm;
-                        minutes = durationMin < Number.POSITIVE_INFINITY ? Math.round(durationMin) : safeKm != null ? Math.round((safeKm / SPEED_KMH) * 60) : null;
+                            const { distanceKm, durationMin } = await roadDistanceBetween(basePoint, target);
+                            const safeKm = distanceKm >= 100000 ? null : distanceKm;
+                            minutes = durationMin < Number.POSITIVE_INFINITY ? Math.round(durationMin) : safeKm != null ? Math.round((safeKm / SPEED_KMH) * 60) : null;
                         } catch {
                             minutes = null;
                         }
@@ -275,7 +275,7 @@ export function Sidebar({
                             onSelectCategory={onSelectCategory}
                             onToggleItem={onToggleItem}
                             collapsed={collapsed[key]}
-                            onToggleCollapse={(k) => setCollapsed(prev => ({ ...prev, [k]: !prev[k] }))}
+                            onToggleCollapse={(k: DatasetKey) => setCollapsed(prev => ({ ...prev, [k]: !prev[k as DatasetKey] } as Record<DatasetKey, boolean>))}
                         />
                     ))}
                     <div className="section">
@@ -342,13 +342,14 @@ export function Sidebar({
                         }));
                     }}
                     onAddExtra={(step, domain) => {
-                        const value = selectionDraft[step][domain];
+                        const value = selectionDraft[step][domain as keyof typeof selectionDraft[typeof step]];
                         if (!value) return;
-                        const already = new Set([...PARCOURS_CONFIG[step][domain], ...(extraNeeds[step][domain] ?? [])]);
+                        const domainKey = domain as DatasetKey;
+                        const already = new Set([...PARCOURS_CONFIG[step][domainKey], ...(extraNeeds[step][domainKey] ?? [])]);
                         if (already.has(value)) return;
                         setExtraNeeds(prev => ({
                             ...prev,
-                            [step]: { ...prev[step], [domain]: [...prev[step][domain], value] }
+                            [step]: { ...prev[step], [domain as keyof typeof prev[typeof step]]: [...(prev[step][domain as keyof typeof prev[typeof step]] ?? []), value] }
                         }));
                         setSelectionDraft(prev => ({
                             ...prev,

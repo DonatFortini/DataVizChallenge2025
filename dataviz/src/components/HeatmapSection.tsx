@@ -1,5 +1,4 @@
-import type { DatasetKey } from '../core/datasets';
-import { labelMap } from '../core/datasets';
+import { labelMap, type DatasetKey } from "../core/types";
 
 type HeatmapSectionProps = {
     dataset: DatasetKey;

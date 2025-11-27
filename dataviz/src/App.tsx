@@ -5,11 +5,27 @@ import './App.css';
 
 import { MapView, type MarkerInfo } from './components/MapView';
 import { Sidebar } from './components/Sidebar';
-import { labelMap, type DatasetKey, type DatasetState, initialDatasetState } from './core/datasets';
-import { ObjectsIn, closestTo, getCommune, isInCorsica, loadGeoJSON } from './core/engine';
+
+import {
+    ObjectsIn,
+    closestTo,
+    getCommune,
+    isInCorsica,
+    loadGeoJSON,
+} from './core/engine';
 import { roadDistancesFrom, FALLBACK_DISTANCE_KM } from './core/distance';
-import { ObjectKeyfromObj, Point, toWGS, type Commune, type QueryObject } from './core/types';
-import { type ActiveTab } from './core/tabs';
+import {
+    initialDatasetState,
+    labelMap,
+    ObjectKeyfromObj,
+    Point,
+    toWGS,
+    type ActiveTab,
+    type Commune,
+    type DatasetKey,
+    type DatasetState,
+    type QueryObject,
+} from './core/types';
 
 const palette = ['#22c55e', '#a855f7', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#6366f1', '#14b8a6'];
 
