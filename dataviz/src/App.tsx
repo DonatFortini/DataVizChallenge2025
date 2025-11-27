@@ -5,11 +5,32 @@ import './App.css';
 
 import { MapView, type MarkerInfo } from './components/MapView';
 import { Sidebar } from './components/Sidebar';
-import { labelMap, type DatasetKey, type DatasetState, initialDatasetState } from './core/datasets';
-import { ObjectsIn, closestTo, getCommune, isInCorsica, loadGeoJSON } from './core/engine';
+
+import {
+    ObjectsIn,
+    closestTo,
+    getCommune,
+    isInCorsica,
+    loadGeoJSON,
+} from './core/engine';
 import { roadDistancesFrom, FALLBACK_DISTANCE_KM } from './core/distance';
-import { ObjectKeyfromObj, Point, toWGS, type Commune, type QueryObject } from './core/types';
-import { type ActiveTab } from './core/tabs';
+import { buildCartogramAsync } from './core/cartogram';
+import {
+    ALL_CATEGORY,
+    DATASET_KEYS,
+    createDatasetRecord,
+    formatCategoryLabel,
+    initialDatasetState,
+    labelMap,
+    ObjectKeyfromObj,
+    Point,
+    toWGS,
+    type ActiveTab,
+    type Commune,
+    type DatasetKey,
+    type DatasetState,
+    type QueryObject,
+} from './core/types';
 
 const palette = ['#22c55e', '#a855f7', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#6366f1', '#14b8a6'];
 
@@ -29,6 +50,7 @@ type AnamorphoseLayer = {
     details: Array<{ label: string; km: number; durationMin: number }>;
     kmByCommune: Record<string, number>;
     durationByCommune: Record<string, number>;
+    warpPoint?: (coord: [number, number]) => [number, number];
 };
 
 const generateColors = (count: number): string[] => {
@@ -131,12 +153,10 @@ function App() {
     const [communeFeatures, setCommuneFeatures] = useState<GeoJSONType.Feature<GeoJSONType.MultiPolygon>[]>([]);
 
     const [heatmapDataset, setHeatmapDataset] = useState<DatasetKey>('sante');
-    const [heatmapCategory, setHeatmapCategory] = useState<string>('all');
-    const [heatmapCategories, setHeatmapCategories] = useState<Record<DatasetKey, string[]>>({
-        etude: [],
-        sante: [],
-        sport: []
-    });
+    const [heatmapCategory, setHeatmapCategory] = useState<string>(ALL_CATEGORY);
+    const [heatmapCategories, setHeatmapCategories] = useState<Record<DatasetKey, string[]>>(
+        () => createDatasetRecord(() => [])
+    );
     const [profilMarkers, setProfilMarkers] = useState<ProfilMarker[]>([]);
     const [heatmapData, setHeatmapData] = useState<{
         counts: Record<string, number>;
@@ -179,7 +199,7 @@ function App() {
     const ensureHeatmapCategories = useCallback(async (dataset: DatasetKey) => {
         const existing = heatmapCategories[dataset];
         if (existing && existing.length > 0) return existing;
-        const allObjects = await ObjectsIn(dataset, 'all');
+        const allObjects = await ObjectsIn(dataset, ALL_CATEGORY);
         const categories = Array.from(new Set(allObjects.map(i => i.categorie).filter(Boolean)));
         setHeatmapCategories(prev => ({ ...prev, [dataset]: categories }));
         return categories;
@@ -189,7 +209,7 @@ function App() {
         ensureCommunePolygons().catch(() => {
             setHeatmapError('Impossible de charger la carte des communes.');
         });
-        (['etude', 'sante', 'sport'] as DatasetKey[]).forEach(dataset => {
+        DATASET_KEYS.forEach(dataset => {
             ensureHeatmapCategories(dataset).catch(() => null);
         });
     }, [ensureCommunePolygons, ensureHeatmapCategories]);
@@ -259,8 +279,7 @@ function App() {
             setBase(coords);
             setStatus('Chargement des données à proximité...');
 
-            await Promise.all((['etude', 'sante', 'sport'] as DatasetKey[])
-                .map(key => loadDataset(key, 'all', coords, foundCommune)));
+            await Promise.all(DATASET_KEYS.map(key => loadDataset(key, ALL_CATEGORY, coords, foundCommune)));
 
             setStatus(null);
         } catch (e: any) {
@@ -337,7 +356,7 @@ function App() {
     const clearSelectedItems = () => {
         setDatasets(prev => {
             const next: Record<DatasetKey, DatasetState> = { ...prev };
-            (Object.keys(next) as DatasetKey[]).forEach(key => {
+            DATASET_KEYS.forEach(key => {
                 next[key] = {
                     ...next[key],
                     selectedItems: {},
@@ -365,7 +384,7 @@ function App() {
 
     const handleHeatmapDatasetChange = (dataset: DatasetKey) => {
         setHeatmapDataset(dataset);
-        setHeatmapCategory('all');
+        setHeatmapCategory(ALL_CATEGORY);
     };
 
     const handleHeatmapCategoryChange = (category: string) => {
@@ -373,7 +392,7 @@ function App() {
     };
 
     const selectedObjects = useMemo<SelectedWithMeta[]>(() => {
-        return (Object.keys(datasets) as DatasetKey[]).flatMap(datasetKey =>
+        return DATASET_KEYS.flatMap(datasetKey =>
             Object.values(datasets[datasetKey].selectedItems).map(item => ({ item, dataset: datasetKey }))
         );
     }, [datasets]);
@@ -419,6 +438,14 @@ function App() {
                 durationByCommune[communeName] = curDur == null ? dur : Math.min(curDur, dur);
             });
 
+            if (commune?.name) {
+                const baseName = commune.name;
+                const currentKm = byCommune[baseName];
+                byCommune[baseName] = currentKm == null ? 0 : Math.min(currentKm, 0);
+                const currentDur = durationByCommune[baseName];
+                durationByCommune[baseName] = currentDur == null ? 0 : Math.min(currentDur, 0);
+            }
+
             const kmValues = Object.values(byCommune);
             const durationValues = Object.values(durationByCommune).filter(v => Number.isFinite(v));
             const maxKm = kmValues.length ? Math.max(...kmValues) : 1;
@@ -431,48 +458,11 @@ function App() {
             features.forEach(feature => {
                 const name = (feature.properties as any)?.nom ?? 'Commune';
                 const dur = durationByCommune[name];
-                const value = dur == null || dur === Number.POSITIVE_INFINITY ? backgroundWeight : Math.max(0.001, dur + 0.2);
+                const value = dur == null || dur === Number.POSITIVE_INFINITY ? backgroundWeight : Math.max(backgroundWeight, dur + 0.5);
                 weights[name] = value;
             });
 
-            const warpFeature = (feature: GeoJSONType.Feature<GeoJSONType.MultiPolygon>): GeoJSONType.Feature<GeoJSONType.MultiPolygon> => {
-                const geom = feature.geometry;
-                if (!geom || geom.type !== 'MultiPolygon') return feature;
-
-                const baseLambert = base!.toLambert();
-                const durationSpan = Number.isFinite(maxDuration) && Number.isFinite(minDuration) ? Math.max(1, maxDuration - Math.max(minDuration, 0)) : 1;
-                const maxFactor = 2.2;
-                const minFactor = 0.6;
-
-                const warpCoord = ([lon, lat]: [number, number]): [number, number] => {
-                    const [x, y] = new Point([lat, lon]).toLambert();
-                    const dx = x - baseLambert[0];
-                    const dy = y - baseLambert[1];
-                    const distKm = Math.sqrt(dx * dx + dy * dy) / 1000;
-                    const name = (feature.properties as any)?.nom ?? 'Commune';
-                    const dur = durationByCommune[name];
-                    const baseVal = Number.isFinite(dur) ? dur : distKm;
-                    const raw = 1 + (baseVal - (Number.isFinite(minDuration) ? minDuration : 0)) / durationSpan;
-                    const factor = Math.max(minFactor, Math.min(maxFactor, raw));
-                    const warped: [number, number] = [baseLambert[0] + dx * factor, baseLambert[1] + dy * factor];
-                    const [latW, lonW] = toWGS([warped[0], warped[1]]);
-                    return [lonW, latW];
-                };
-
-                const warpedCoords = geom.coordinates.map(poly =>
-                    poly.map(ring => ring.map(coord => warpCoord(coord as [number, number])))
-                );
-
-                return {
-                    ...feature,
-                    geometry: {
-                        type: 'MultiPolygon',
-                        coordinates: warpedCoords
-                    }
-                };
-            };
-
-            const warpedFeatures = features.map(warpFeature);
+            const { warpedFeatures, warpPoint } = await buildCartogramAsync(features, weights, { iterations: 8, backgroundValue: backgroundWeight });
 
             setAnamorphoseState({
                 loading: false,
@@ -488,13 +478,14 @@ function App() {
                     maxDuration,
                     details: detailList,
                     kmByCommune: byCommune,
-                    durationByCommune
+                    durationByCommune,
+                    warpPoint
                 }
             });
         } catch (e: any) {
             setAnamorphoseState({ loading: false, error: e?.message ?? 'Impossible de générer l\'anamorphose.', layer: null });
         }
-    }, [base, ensureCommunePolygons, selectedObjects]);
+    }, [base, commune, ensureCommunePolygons, selectedObjects]);
 
     useEffect(() => {
         if (activeTab !== 'heatmap') return;
@@ -537,20 +528,19 @@ function App() {
     }, [commune]);
 
     const selectionMarkers = useMemo<MarkerInfo[]>(() => {
-        return (Object.keys(datasets) as DatasetKey[])
-            .flatMap(k => {
-                const ds = datasets[k];
-                return Object.entries(ds.selectedItems).map(([selectedKey, item]) => {
-                    const idx = ds.items.findIndex(i => ObjectKeyfromObj(i) === selectedKey);
-                    const color = ds.selectedColors[selectedKey] ?? ds.colors[idx] ?? randomColor();
-                    const [lat, lon] = item.coordonnees;
-                    return {
-                        position: [lat, lon] as [number, number],
-                        color,
-                        label: buildMarkerLabel(k, item)
-                    };
-                });
+        return DATASET_KEYS.flatMap(k => {
+            const ds = datasets[k];
+            return Object.entries(ds.selectedItems).map(([selectedKey, item]) => {
+                const idx = ds.items.findIndex(i => ObjectKeyfromObj(i) === selectedKey);
+                const color = ds.selectedColors[selectedKey] ?? ds.colors[idx] ?? randomColor();
+                const [lat, lon] = item.coordonnees;
+                return {
+                    position: [lat, lon] as [number, number],
+                    color,
+                    label: buildMarkerLabel(k, item)
+                };
             });
+        });
     }, [datasets]);
 
     const markerPositions = useMemo<MarkerInfo[]>(() => {
@@ -560,9 +550,23 @@ function App() {
         return selectionMarkers;
     }, [activeTab, profilMarkers, selectionMarkers]);
 
+    const anamorphoseWarp = anamorphoseState.layer?.warpPoint;
+
+    const warpedMarkers = useMemo<MarkerInfo[]>(() => {
+        if (activeTab !== 'anamorphose' || !anamorphoseWarp) return markerPositions;
+        return markerPositions.map(m => ({
+            ...m,
+            position: anamorphoseWarp(m.position)
+        }));
+    }, [activeTab, anamorphoseWarp, markerPositions]);
+
+    const warpedBase = useMemo<[number, number] | null>(() => {
+        if (activeTab !== 'anamorphose' || !anamorphoseWarp || !base) return null;
+        return anamorphoseWarp([base.latitude, base.longitude]);
+    }, [activeTab, anamorphoseWarp, base]);
+
     const selectedCount = useMemo(() => {
-        return (Object.keys(datasets) as DatasetKey[])
-            .reduce((acc, key) => acc + Object.keys(datasets[key].selectedItems).length, 0);
+        return DATASET_KEYS.reduce((acc, key) => acc + Object.keys(datasets[key].selectedItems).length, 0);
     }, [datasets]);
 
     const baseMarkerLabel = useMemo(() => {
@@ -596,7 +600,7 @@ function App() {
 
     const heatmapTitle = useMemo(() => {
         const datasetLabel = labelMap[heatmapDataset] ?? heatmapDataset;
-        const categoryLabel = heatmapCategory === 'all' ? 'Toutes catégories' : heatmapCategory;
+        const categoryLabel = formatCategoryLabel(heatmapCategory);
         return `${datasetLabel} • ${categoryLabel}`;
     }, [heatmapCategory, heatmapDataset]);
 
@@ -614,10 +618,11 @@ function App() {
                     base={isInteractiveTab ? base : null}
                     baseLabel={baseMarkerLabel}
                     communeFeature={isInteractiveTab ? communeFeature : null}
-                    markerPositions={isInteractiveTab ? markerPositions : []}
+                    markerPositions={isInteractiveTab ? warpedMarkers : []}
                     corsicaCenter={corsicaCenter}
                     onSelect={handleMapClick}
                     selectionEnabled={isInteractiveTab}
+                    warpedBase={activeTab === 'anamorphose' ? warpedBase : null}
                     heatmapLayerKey={heatmapLayerKey}
                     heatmapLayer={activeTab === 'heatmap' && communeFeatures.length > 0 ? {
                         features: communeFeatures,

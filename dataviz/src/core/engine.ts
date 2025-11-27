@@ -1,8 +1,8 @@
-import { ObjectKeyfromProps, Point, type Commune, type Coordinates, type QueryObject } from "./types";
+import { ALL_CATEGORY, ObjectKeyfromProps, Point, type Commune, type Coordinates, type QueryObject, type DatasetKey } from "./types";
 import { point as turfPoint } from "@turf/helpers";
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { communes } from "./communes.data";
-import type { DatasetKey } from "./datasets";
+
 import { roadDistancesFrom, FALLBACK_DISTANCE_KM } from "./distance";
 
 const BASE_URL = (import.meta as any).env?.BASE_URL ?? "/";
@@ -130,7 +130,7 @@ export async function ObjectsIn(
 
                 const results: QueryObject[] = [];
                 const normalizedCategory = (category ?? "").toString().toLowerCase();
-                const returnAll = normalizedCategory === "all";
+                const returnAll = normalizedCategory === ALL_CATEGORY;
 
                 for (const feature of geojson.features) {
                     const featureCategory =

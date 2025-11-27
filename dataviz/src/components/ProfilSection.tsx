@@ -1,7 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { DatasetKey } from '../core/datasets';
-import type { Commune, QueryObject } from '../core/types';
-import { Point } from '../core/types';
+import { DATASET_KEYS, Point, type Commune, type QueryObject, type DatasetKey } from '../core/types';
 export type AccessLevel = { label: string; color: string; icon: string };
 export type ParcoursStepKey = 'enfance' | 'adolescence' | 'adulte';
 export type ParcoursResult = {
@@ -56,7 +54,6 @@ type ProfilSectionProps = {
     basePoint: Point | null;
     commune: Commune | null;
     hasBase: boolean;
-    speedKmh: number;
     extraNeeds: Record<ParcoursStepKey, { etude: string[]; sante: string[]; sport: string[] }>;
     selectionDraft: Record<ParcoursStepKey, { etude: string; sante: string; sport: string }>;
     categoriesByDomain: Record<DatasetKey, readonly string[]>;
@@ -73,7 +70,6 @@ type ProfilSectionProps = {
 
 export function ProfilSection({
     hasBase,
-    speedKmh,
     extraNeeds,
     selectionDraft,
     categoriesByDomain,
@@ -111,8 +107,7 @@ export function ProfilSection({
 
     const plannedNeeds = useMemo(() => {
         const config = PARCOURS_CONFIG[focusedStep];
-        const items = (['etude', 'sante', 'sport'] as DatasetKey[])
-            .flatMap(domain => config[domain].map(cat => `${DOMAIN_LABELS[domain]} — ${cat}`));
+        const items = DATASET_KEYS.flatMap(domain => config[domain].map(cat => `${DOMAIN_LABELS[domain]} — ${cat}`));
         const tooltip = items.length
             ? `Besoins pré-remplis :\n${items.join('\n')}`
             : 'Aucun besoin pré-rempli';
@@ -152,7 +147,7 @@ export function ProfilSection({
                             </div>
                         </div>
                         <div className="parcours-extras">
-                            {(['etude', 'sante', 'sport'] as DatasetKey[]).map(domain => {
+                            {DATASET_KEYS.map(domain => {
                                 const options = categoriesByDomain[domain];
                                 const current = selectionDraft[focusedStep][domain];
                                 const label = domain === 'etude' ? 'Éducation' : domain === 'sante' ? 'Santé' : 'Sport';
@@ -198,7 +193,7 @@ export function ProfilSection({
                         {needsDirty && hasBase && !loading && (
                             <p className="small muted">Des changements sont en attente d&apos;analyse.</p>
                         )}
-                        <p className="small muted">Rappel : temps estimés à {speedKmh} km/h en voiture.</p>
+                        <p className="small muted">Temps routiers calculés via OSRM.</p>
                     </div>
                     {error && <p className="small error-text">{error}</p>}
 

@@ -72,11 +72,68 @@ const asPoint = (c: Coordinates) => new Point(c);
 const toLambert = (c: Coordinates): Coordinates => asPoint(c).toLambert();
 const toWGS = (c: Coordinates): Coordinates => asPoint(c).toWGS();
 
+
 export { Point, asPoint, toLambert, toWGS };
 
+export type ActiveTab = 'anamorphose' | 'heatmap' | 'profil';
 
 export type {
     Coordinates,
     QueryObject,
     Commune
 };
+
+export type DatasetItem = QueryObject & {
+    properties?: Record<string, unknown>;
+    label?: string;
+};
+
+export type DatasetKey = 'etude' | 'sante' | 'sport';
+
+export const DATASET_KEYS: readonly DatasetKey[] = ['etude', 'sante', 'sport'];
+export const ALL_CATEGORY = 'all';
+
+export const createDatasetRecord = <T,>(factory: () => T): Record<DatasetKey, T> => {
+    const acc = {} as Record<DatasetKey, T>;
+    DATASET_KEYS.forEach(key => {
+        acc[key] = factory();
+    });
+    return acc;
+};
+
+export const withAllCategory = (categories: readonly string[]) => [
+    ALL_CATEGORY,
+    ...Array.from(new Set(categories.filter(Boolean)))
+];
+
+export const formatCategoryLabel = (category: string) =>
+    category === ALL_CATEGORY ? 'Toutes les catégories' : category;
+
+export type DatasetState = {
+    loading: boolean;
+    items: DatasetItem[];
+    colors: string[];
+    categories: string[];
+    selectedCategory: string;
+    selectedItems: Record<string, DatasetItem>;
+    selectedColors: Record<string, string>;
+    error?: string | null;
+};
+
+export const labelMap: Record<DatasetKey, string> = {
+    etude: 'Scolaire',
+    sante: 'Santé',
+    sport: 'Sport'
+};
+
+export const initialDatasetState = (): Record<DatasetKey, DatasetState> =>
+    createDatasetRecord(() => ({
+        loading: false,
+        items: [],
+        colors: [],
+        categories: [],
+        selectedCategory: ALL_CATEGORY,
+        selectedItems: {},
+        selectedColors: {},
+        error: null
+    }));

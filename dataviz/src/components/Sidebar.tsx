@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Point, type Commune, type QueryObject } from '../core/types';
-import type { DatasetKey, DatasetState } from '../core/datasets';
+import { createDatasetRecord, DATASET_KEYS, Point, type ActiveTab, type Commune, type DatasetKey, type DatasetState, type QueryObject } from '../core/types';
+
 import { roadDistanceBetween } from '../core/distance';
 import type { MarkerInfo } from './MapView';
 import { closestTo } from '../core/engine';
 import { HeatmapSection } from './HeatmapSection';
 import { AnamorphoseSection } from './AnamorphoseSection';
 import { PARCOURS_CONFIG, PARCOURS_STEPS, type ParcoursResult, type ParcoursStepKey, ProfilSection, getAccessibilityLevel } from './ProfilSection';
-import type { ActiveTab } from '../core/tabs';
-const SPEED_KMH = 50;
 
 type SidebarProps = {
     baseLambert: { x: number; y: number } | null;
@@ -86,24 +84,22 @@ export function Sidebar({
     const [profilLoading, setProfilLoading] = useState(false);
     const [profilError, setProfilError] = useState<string | null>(null);
     const [profilNeedsDirty, setProfilNeedsDirty] = useState(true);
-    const [collapsed, setCollapsed] = useState<Record<DatasetKey, boolean>>({
-        etude: false,
-        sante: false,
-        sport: false
-    });
+    const [collapsed, setCollapsed] = useState<Record<DatasetKey, boolean>>(() => createDatasetRecord(() => false));
     const lastRunRef = useRef(0);
 
-    const categoriesByDomain: Record<DatasetKey, readonly string[]> = useMemo(() => ({
-        etude: heatmapCategories.etude?.length ? heatmapCategories.etude : datasets.etude.categories,
-        sante: heatmapCategories.sante?.length ? heatmapCategories.sante : datasets.sante.categories,
-        sport: heatmapCategories.sport?.length ? heatmapCategories.sport : datasets.sport.categories
-    }), [datasets, heatmapCategories]);
+    const categoriesByDomain: Record<DatasetKey, readonly string[]> = useMemo(() => (
+        DATASET_KEYS.reduce((acc, key) => {
+            const override = heatmapCategories[key];
+            acc[key] = override?.length ? override : datasets[key].categories;
+            return acc;
+        }, {} as Record<DatasetKey, readonly string[]>)
+    ), [datasets, heatmapCategories]);
 
     const allNeeds = useMemo(() => {
         const needs: Array<{ step: ParcoursStepKey; domain: DatasetKey; category: string }> = [];
         PARCOURS_STEPS.forEach(step => {
             const cfg = PARCOURS_CONFIG[step];
-            (['etude', 'sante', 'sport'] as DatasetKey[]).forEach(domain => {
+            DATASET_KEYS.forEach(domain => {
                 const baseCats = cfg[domain];
                 const extras = extraNeeds[step][domain];
                 const merged = Array.from(new Set([...baseCats, ...extras]));
@@ -154,9 +150,8 @@ export function Sidebar({
                     if (best) {
                         try {
                             const target = new Point(best.coordonnees);
-                        const { distanceKm, durationMin } = await roadDistanceBetween(basePoint, target);
-                        const safeKm = distanceKm >= 100000 ? null : distanceKm;
-                        minutes = durationMin < Number.POSITIVE_INFINITY ? Math.round(durationMin) : safeKm != null ? Math.round((safeKm / SPEED_KMH) * 60) : null;
+                            const { durationMin } = await roadDistanceBetween(basePoint, target);
+                            minutes = durationMin < Number.POSITIVE_INFINITY ? Math.round(durationMin) : null;
                         } catch {
                             minutes = null;
                         }
@@ -266,7 +261,17 @@ export function Sidebar({
 
             {activeTab === 'anamorphose' && (
                 <div className="sections">
-                    {(Object.keys(datasets) as DatasetKey[]).map(key => (
+                    <div className="reset-inline">
+                        <button
+                            className="reset-button"
+                            type="button"
+                            onClick={onResetSelections}
+                            disabled={selectionCount === 0}
+                        >
+                            Réinitialiser ({selectionCount})
+                        </button>
+                    </div>
+                    {DATASET_KEYS.map(key => (
                         <AnamorphoseSection
                             key={key}
                             datasetKey={key}
@@ -275,11 +280,11 @@ export function Sidebar({
                             onSelectCategory={onSelectCategory}
                             onToggleItem={onToggleItem}
                             collapsed={collapsed[key]}
-                            onToggleCollapse={(k) => setCollapsed(prev => ({ ...prev, [k]: !prev[k] }))}
+                            onToggleCollapse={(k: DatasetKey) => setCollapsed(prev => ({ ...prev, [k]: !prev[k] }))}
                         />
                     ))}
                     <div className="section">
-                        <div className="section-body">
+                        <div className="section-body anamorphose-actions">
                             <button
                                 className="primary-btn"
                                 type="button"
@@ -288,20 +293,7 @@ export function Sidebar({
                             >
                                 {anamorphoseLoading ? 'Calcul de l’anamorphose...' : 'Tracer l’anamorphose'}
                             </button>
-                            <p className="small muted">Utilise /table OSRM à partir du point sélectionné vers les objets choisis pour déformer la carte.</p>
                             {anamorphoseError && <p className="small error-text">{anamorphoseError}</p>}
-                        </div>
-                    </div>
-                    <div className="section reset-row">
-                        <div className="section-body">
-                            <button
-                                className="reset-button"
-                                type="button"
-                                onClick={onResetSelections}
-                                disabled={selectionCount === 0}
-                            >
-                                Réinitialiser les sélections ({selectionCount})
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -324,7 +316,6 @@ export function Sidebar({
                     basePoint={basePoint}
                     commune={commune}
                     hasBase={hasBase}
-                    speedKmh={SPEED_KMH}
                     extraNeeds={extraNeeds}
                     selectionDraft={selectionDraft}
                     categoriesByDomain={categoriesByDomain}
@@ -342,13 +333,14 @@ export function Sidebar({
                         }));
                     }}
                     onAddExtra={(step, domain) => {
-                        const value = selectionDraft[step][domain];
+                        const value = selectionDraft[step][domain as keyof typeof selectionDraft[typeof step]];
                         if (!value) return;
-                        const already = new Set([...PARCOURS_CONFIG[step][domain], ...(extraNeeds[step][domain] ?? [])]);
+                        const domainKey = domain as DatasetKey;
+                        const already = new Set([...PARCOURS_CONFIG[step][domainKey], ...(extraNeeds[step][domainKey] ?? [])]);
                         if (already.has(value)) return;
                         setExtraNeeds(prev => ({
                             ...prev,
-                            [step]: { ...prev[step], [domain]: [...prev[step][domain], value] }
+                            [step]: { ...prev[step], [domain as keyof typeof prev[typeof step]]: [...(prev[step][domain as keyof typeof prev[typeof step]] ?? []), value] }
                         }));
                         setSelectionDraft(prev => ({
                             ...prev,
