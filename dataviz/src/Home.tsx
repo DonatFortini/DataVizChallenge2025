@@ -1,6 +1,8 @@
 import { useState, useEffect, Suspense, useRef, forwardRef, lazy } from 'react';
+import type { ReactNode } from 'react';
 
 const LazyScene = lazy(() => import('./IsulaScene'));
+const BASE_URL = import.meta.env.BASE_URL;
 
 type HomeProps = {
   onEnterApp: () => void;
@@ -10,13 +12,15 @@ type HomeProps = {
 
 type InfoCardProps = {
   title: string;
-  body: React.ReactNode;
-  note?: React.ReactNode;
+  body: ReactNode;
+  note?: ReactNode;
   visible: boolean;
+  cardId?: string;
+  overlay?: ReactNode;
 };
 
-const InfoCard = forwardRef<HTMLDivElement, InfoCardProps>(({ title, body, note, visible }, ref) => (
-  <div ref={ref} className="h-screen flex items-center justify-center px-12">
+const InfoCard = forwardRef<HTMLDivElement, InfoCardProps>(({ title, body, note, visible, cardId, overlay }, ref) => (
+  <div ref={ref} data-card-id={cardId} className="h-screen relative flex items-center justify-center px-12">
     <div
       className="max-w-xl bg-white border-4 border-black p-10 shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] transition-all duration-500 transform"
       style={{
@@ -36,6 +40,11 @@ const InfoCard = forwardRef<HTMLDivElement, InfoCardProps>(({ title, body, note,
         ) : null}
       </div>
     </div>
+    {overlay ? (
+      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 pointer-events-none">
+        {overlay}
+      </div>
+    ) : null}
   </div>
 ));
 
@@ -45,16 +54,18 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
   const [scrollY, setScrollY] = useState(0);
   const [parallax, setParallax] = useState({ x: 0, y: 0 });
   const [playAnimation, setPlayAnimation] = useState(false);
+  const [playTrigger, setPlayTrigger] = useState(0);
+  const [hasPlayedAnimation, setHasPlayedAnimation] = useState(false);
   const [showScene, setShowScene] = useState(false);
+  const [activeCard, setActiveCard] = useState<'intro' | 'card1' | 'card2' | 'card3'>('intro');
+  type CardId = 'card1' | 'card2' | 'card3';
   const textRef = useRef<HTMLDivElement>(null);
   const card1Ref = useRef<HTMLDivElement>(null);
   const card2Ref = useRef<HTMLDivElement>(null);
-  const animationCardRef = useRef<HTMLDivElement>(null);
-  const sceneRef = useRef<HTMLDivElement>(null);
+  const card3Ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let activated = false;
-    setPlayAnimation(false);
     const activateScene = () => {
       if (!activated) {
         activated = true;
@@ -76,37 +87,54 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
 
     const observer = new IntersectionObserver(
       (entries) => {
+        let topEntry: { id: CardId; ratio: number } | null = null;
         entries.forEach((entry) => {
+          const id = (entry.target as HTMLElement).dataset.cardId as CardId | undefined;
+          if (!id) return;
           if (entry.isIntersecting) {
-            if (entry.target === sceneRef.current) {
-              activateScene();
+            if (!topEntry || entry.intersectionRatio > topEntry.ratio) {
+              topEntry = { id, ratio: entry.intersectionRatio };
             }
-            if (entry.target === animationCardRef.current) {
-              setPlayAnimation(true);
-            }
-          } else if (entry.target === animationCardRef.current) {
-            setPlayAnimation(false);
           }
         });
+        if (topEntry !== null) {
+          const { id } = topEntry;
+          setActiveCard(id);
+          return;
+        }
+        if (window.scrollY < 200) {
+          setActiveCard('intro');
+        }
       },
-      { threshold: 0.6 }
+      { threshold: [0.2, 0.4, 0.6, 0.8, 1] }
     );
 
-    if (sceneRef.current) observer.observe(sceneRef.current);
-    if (animationCardRef.current) observer.observe(animationCardRef.current);
+    [card1Ref, card2Ref, card3Ref].forEach((ref) => {
+      if (ref.current) observer.observe(ref.current);
+    });
 
     window.addEventListener('scroll', handleScroll);
     window.addEventListener('mousemove', handleMouseMove);
 
     const timer = window.setTimeout(activateScene, 800);
 
-      return () => {
-        window.removeEventListener('scroll', handleScroll);
-        window.removeEventListener('mousemove', handleMouseMove);
-        observer.disconnect();
-        window.clearTimeout(timer);
-      };
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('mousemove', handleMouseMove);
+      observer.disconnect();
+      window.clearTimeout(timer);
+    };
   }, []);
+
+  useEffect(() => {
+    if (activeCard === 'card1' && !hasPlayedAnimation) {
+      setPlayAnimation(true);
+      setPlayTrigger((t) => t + 1);
+      setHasPlayedAnimation(true);
+    } else if (activeCard !== 'card1') {
+      setPlayAnimation(false);
+    }
+  }, [activeCard, hasPlayedAnimation]);
 
   const FADE_TEXT_START = 0;
   const FADE_TEXT_END = 300;
@@ -115,6 +143,7 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
 
   const textOpacity = Math.max(0, 1 - (scrollY - FADE_TEXT_START) / (FADE_TEXT_END - FADE_TEXT_START));
   const moveProgress = Math.min(1, Math.max(0, (scrollY - MOVE_MODEL_START) / (MOVE_MODEL_END - MOVE_MODEL_START)));
+  const leftStage = activeCard === 'card3' ? 'cartogram' : activeCard === 'card2' ? 'image' : 'model';
 
   return (
     <div className="relative bg-white min-h-[300vh]">
@@ -136,21 +165,17 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
          `}</style>
       </div>
 
-      <div
-        ref={sceneRef}
-        className="fixed inset-0 pointer-events-auto"
-        style={{ zIndex: 5 }}
-      >
-        {showScene && (
-          <Suspense fallback={null}>
-            <LazyScene playAnimation={playAnimation} />
-          </Suspense>
-        )}
-      </div>
-
       <div className="relative z-10 pointer-events-none">
 
         <div className="h-screen flex flex-col items-center justify-center pointer-events-none relative">
+
+          {showScene ? (
+            <div className="absolute inset-0 opacity-85 pointer-events-none">
+              <Suspense fallback={null}>
+                <LazyScene playAnimation={false} />
+              </Suspense>
+            </div>
+          ) : null}
 
           <div
             ref={textRef}
@@ -160,7 +185,9 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
             <h1 className="text-7xl font-black text-black tracking-tighter border-4 border-black p-6 bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,0.2)] text-center">
               DATAVIZ CHALLENGE 2025 - Vivre le territoire
             </h1>
-            <p className="mt-8 font-mono text-white-500 animate-bounce">↓ Dérouler</p>
+            <p className="mt-8 font-mono text-white font-bold animate-bounce text-2xl px-4 py-2 bg-black/80 border-2 border-white shadow-[4px_4px_0px_0px_rgba(0,0,0,0.35)]">
+              <span className="drop-shadow-[0_1px_0_#000,1px_0_0_#000,-1px_0_0_#000,0_-1px_0_#000]">↓ Dérouler</span>
+            </p>
           </div>
         </div>
 
@@ -171,13 +198,51 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
         <div className="min-h-screen flex items-start pointer-events-none border-4 border-black relative bg-white">
 
           <div className="w-1/2 h-screen sticky top-0 flex items-center justify-center border-r-4 border-blue-200 border-dashed bg-blue-50/30 pointer-events-auto">
+            <div className="relative w-full h-full flex items-center justify-center">
+              <div
+                className="absolute inset-0 transition-opacity duration-700"
+                style={{ opacity: leftStage === 'model' ? 1 : 0, pointerEvents: leftStage === 'model' ? 'auto' : 'none' }}
+              >
+                {showScene ? (
+                  <Suspense fallback={null}>
+                    <LazyScene playAnimation={playAnimation} playOnce={false} loopWithDelayMs={2500} playTrigger={playTrigger} />
+                  </Suspense>
+                ) : null}
+              </div>
 
-            <div className="w-full h-full">
-              {showScene && (
-                <Suspense fallback={null}>
-                  <LazyScene playAnimation={playAnimation} />
-                </Suspense>
-              )}
+              <div
+                className="absolute inset-0 transition-opacity duration-700"
+                style={{ opacity: leftStage === 'image' ? 1 : 0, pointerEvents: leftStage === 'image' ? 'auto' : 'none' }}
+              >
+                <div className="w-full h-full flex flex-col items-center justify-center gap-4 p-6">
+                  <div className="w-full h-full bg-white border-4 border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,0.9)] flex items-center justify-center overflow-hidden">
+                    <img
+                      src={`${BASE_URL}deformation_pop.png`}
+                      alt="Déformation population"
+                      className="object-contain w-full h-full"
+                    />
+                  </div>
+                  <p className="text-sm text-gray-600 bg-white border border-dashed border-black px-3 py-2">
+                    Evolution de la population des communes entre 1936 et 2022. Les communes sont déformées selon leur pourcentage de changement. Dans le cas le plus extrême, Borgu, la population a augmenté de 4000%.
+                  </p>
+                </div>
+              </div>
+
+              <div
+                className="absolute inset-0 transition-opacity duration-700"
+                style={{ opacity: leftStage === 'cartogram' ? 1 : 0, pointerEvents: leftStage === 'cartogram' ? 'auto' : 'none' }}
+              >
+                <div className="w-full h-full p-6 flex flex-col items-center justify-center gap-4">
+                  <div className="w-full h-full bg-white border-4 border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,0.9)] flex items-center justify-center">
+                    <div className="text-center space-y-2 px-6">
+                      <p className="font-mono text-gray-700 text-lg">Cartogramme en préparation</p>
+                      <p className="text-sm text-gray-500 max-w-sm mx-auto">
+                        Le cartogramme (temps de trajet vers l&apos;université) sera affiché ici. Placeholder statique pour l&apos;instant.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -185,68 +250,96 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
 
             <InfoCard
               ref={card1Ref}
+              cardId="card1"
               title="Géographie"
               visible={moveProgress >= 0.8}
               body={
-                <p className="text-gray-600">
-                  La Corse représente une surface de près de 8700km². Elle est la plus montagneuse des trois grande îles de méditerranée occidentale.
-                </p>
+                <div className="space-y-4 font-mono text-lg">
+                  <p className="text-gray-600">
+                    La Corse représente une surface de près de 8700km². C&apos;est la quatrième plus grande île de
+                    méditerranée, et la plus montagneuse de toutes. Elle comporte un grand nombre de vallées, et des
+                    sommets allant jusqu&apos;à 2700 mètres d&apos;altitudes.
+                  </p>
+                  <p className="text-gray-600">
+                    En fait, si on l&apos;aplatissait complètement, elle gagnerait près de 1000km²*.
+                  </p>
+                </div>
               }
-              note="* Notes de bas de page"
+              note="* Calcul réalisé avec QGIS à partir du DEM fourni par l'IGN. L'animation 3D Isula se joue ici une seule fois."
             />
 
             <InfoCard
               ref={card2Ref}
+              cardId="card2"
               title="Démographie"
               visible={moveProgress >= 0.8}
               body={
-                <p className="text-gray-600">
-                  Avec environ 350 000 habitants, la Corse a une densité de population relativement faible par rapport au continent.
-                </p>
+                <div className="space-y-4 font-mono text-lg">
+                  <p className="text-gray-600">
+                    Avec environ 350 000 habitants en 2022¹, il y a eu une véritable explosion démographique depuis les
+                    deux guerres mondiales, qui avaient laissé la Corse exsangue : sa population passant de 290 000
+                    habitants² en 1911 à 187 000 en 1936.
+                  </p>
+
+                </div>
               }
-              note="* Source: INSEE 2024"
+              note="¹ Insee dossier complet région de Corse (94) • ² Lefèvbre «La population de la Corse», 1957."
             />
 
             <InfoCard
-              ref={animationCardRef}
-              title="Animation"
+              ref={card3Ref}
+              cardId="card3"
+              title="Cartogramme des trajets"
               visible={moveProgress >= 0.9}
-              body={
-                <p className="text-gray-600">
-                  Placeholder Animation — le modèle 3D se met en mouvement dès que cette carte entre dans le viewport.
+              overlay={
+                <p className="font-mono text-lg text-white font-bold animate-bounce inline-block px-4 py-2 bg-black/90 border-2 border-white shadow-[4px_4px_0px_0px_rgba(0,0,0,0.35)]">
+                  <span className="drop-shadow-[0_1px_0_#000,1px_0_0_#000,-1px_0_0_#000,0_-1px_0_#000]">↓ Dérouler</span>
                 </p>
               }
-              note="* Lancement automatique de l&apos;animation Isula.glb"
+              body={
+                <div className="space-y-3 text-gray-600">
+                  <p>
+                    Déformation des communes selon un temps de trajet estimé entre leur centroïde et l&apos;université
+                    (42.304918, 9.154972). Plus le trajet est long, plus la surface est étirée.
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    Approximations prévues : centroïdes géométriques + vitesse moyenne 50km/h. En attente d&apos;intégration
+                    des données réelles de temps de trajet.
+                  </p>
+                </div>
+              }
+              note="* Placeholder visuel — cartogram-chart sera raccordé plus tard."
             />
           </div>
-
-
         </div>
 
-        <div className="h-screen border-4 border-gray-300 flex items-center justify-center bg-gray-100 pointer-events-auto">
-          <div className="max-w-2xl text-center space-y-6 px-6">
-            <p className="text-xl font-semibold text-gray-700">
-              Prêt à explorer la carte interactive et les données du territoire ?
-            </p>
-            <div className="inline-flex items-center gap-3">
-              <button
-                type="button"
-                onClick={onEnterApp}
-                disabled={!ready}
-                className="px-6 py-3 bg-black text-white font-bold uppercase tracking-wide border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,0.2)] disabled:opacity-60 disabled:cursor-not-allowed transition-all hover:-translate-y-1 hover:shadow-[12px_12px_0px_0px_rgba(0,0,0,0.2)]"
-              >
-                Entrer dans l'application
-              </button>
-              <div className="text-left text-sm text-gray-600">
-                <p className="font-semibold">Préparation des données</p>
-                <p className="text-gray-500">
-                  {prefetching ? 'Chargement des GeoJSON...' : ready ? 'Données prêtes et mises en cache.' : 'En attente de mise en cache...'}
-                </p>
-              </div>
+
+      </div>
+
+      <div className="h-screen border-4 border-gray-300 flex items-center justify-center bg-gray-100 pointer-events-auto">
+        <div className="max-w-2xl text-center space-y-6 px-6">
+          <p className="text-xl font-semibold text-gray-700">
+            Prêt à explorer la carte interactive et les données du territoire ?
+          </p>
+          <div className="inline-flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onEnterApp}
+              disabled={!ready}
+              className="px-6 py-3 bg-black text-white font-bold uppercase tracking-wide border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,0.2)] disabled:opacity-60 disabled:cursor-not-allowed transition-all hover:-translate-y-1 hover:shadow-[12px_12px_0px_0px_rgba(0,0,0,0.2)]"
+            >
+              Entrer dans l'application
+            </button>
+            <div className="text-left text-sm text-gray-600">
+              <p className="font-semibold">Préparation des données</p>
+              <p className="text-gray-500">
+                {prefetching ? 'Chargement des GeoJSON...' : ready ? 'Données prêtes et mises en cache.' : 'En attente de mise en cache...'}
+              </p>
             </div>
           </div>
         </div>
       </div>
     </div>
+
   );
 }

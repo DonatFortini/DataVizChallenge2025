@@ -7,6 +7,8 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   base: '/DataVizChallenge2025/',
   build: {
+    reportCompressedSize: false, // skip brotli-size on 100MB assets to avoid long builds
+    chunkSizeWarningLimit: 2000,
     rollupOptions: {
       output: {
         manualChunks: {

@@ -26,12 +26,15 @@ function InteractionRig({ children }: { children: React.ReactNode }) {
 type ModelProps = {
   url: string;
   playAnimation?: boolean;
+  playOnce?: boolean;
+  playTrigger?: number;
+  loopWithDelayMs?: number;
 };
 
-function Model({ url, playAnimation = false }: ModelProps) {
+function Model({ url, playAnimation = false, playOnce = false, playTrigger, loopWithDelayMs }: ModelProps) {
   const { scene, animations } = useGLTF(url);
   const clonedScene = useMemo(() => scene.clone(true), [scene]);
-  const { actions, names } = useAnimations(animations, clonedScene);
+  const { actions, names, mixer } = useAnimations(animations, clonedScene);
   const ref = useRef<THREE.Group>(null!);
   const primaryName = names[0];
 
@@ -39,22 +42,45 @@ function Model({ url, playAnimation = false }: ModelProps) {
     if (!primaryName) return;
     const action = actions[primaryName];
     if (!action) return;
+    const hasDelayLoop = typeof loopWithDelayMs === 'number' && loopWithDelayMs > 0;
+    let timeoutId: number | undefined;
 
-    if (playAnimation) {
+    const playClip = () => {
       action.reset();
-      action.setLoop(THREE.LoopRepeat, Infinity);
+      action.setLoop(hasDelayLoop || playOnce ? THREE.LoopOnce : THREE.LoopRepeat, hasDelayLoop || playOnce ? 1 : Infinity);
       action.clampWhenFinished = true;
       action.enabled = true;
       action.paused = false;
       action.play();
-    } else {
-      action.stop();
-      action.reset();
-      action.time = 0; // ensure first frame when paused
+    };
+
+    if (playAnimation) {
+      playClip();
+      if (hasDelayLoop && mixer) {
+        const handleFinished = (event: any) => {
+          if (event.action !== action) return;
+          if (!playAnimation) return;
+          timeoutId = window.setTimeout(() => {
+            playClip();
+          }, loopWithDelayMs);
+        };
+        mixer.addEventListener('finished', handleFinished);
+        return () => {
+          if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+          mixer.removeEventListener('finished', handleFinished);
+          action.stop();
+        };
+      }
+      return () => {
+        action.stop();
+      };
     }
 
-    return () => action.stop();
-  }, [actions, playAnimation, primaryName]);
+    action.stop();
+    action.reset();
+    action.time = 0; // ensure first frame when paused
+    return undefined;
+  }, [actions, loopWithDelayMs, mixer, playAnimation, playOnce, playTrigger, primaryName]);
 
   return (
     <group ref={ref}>
@@ -73,20 +99,20 @@ const SceneLights = () => (
   </>
 );
 
-const ModelGroup = ({ playAnimation = false }: { playAnimation?: boolean }) => (
+const ModelGroup = ({ playAnimation = false, playOnce = false, playTrigger, loopWithDelayMs }: { playAnimation?: boolean; playOnce?: boolean; playTrigger?: number; loopWithDelayMs?: number }) => (
   <group position={[0, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
     <InteractionRig>
-      <Model url={MODEL_URL} playAnimation={playAnimation} />
+      <Model url={MODEL_URL} playAnimation={playAnimation} playOnce={playOnce} playTrigger={playTrigger} loopWithDelayMs={loopWithDelayMs} />
     </InteractionRig>
   </group>
 );
 
-export default function IsulaScene({ playAnimation = false }: { playAnimation?: boolean }) {
+export default function IsulaScene({ playAnimation = false, playOnce = false, playTrigger, loopWithDelayMs }: { playAnimation?: boolean; playOnce?: boolean; playTrigger?: number; loopWithDelayMs?: number }) {
   return (
     <Canvas camera={{ position: [0, 0, 5], fov: 50 }} className="w-full h-full">
       <SceneLights />
       <Suspense fallback={null}>
-        <ModelGroup playAnimation={playAnimation} />
+        <ModelGroup playAnimation={playAnimation} playOnce={playOnce} playTrigger={playTrigger} loopWithDelayMs={loopWithDelayMs} />
         <Environment preset="forest" />
       </Suspense>
     </Canvas>
