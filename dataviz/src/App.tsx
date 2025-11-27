@@ -7,12 +7,29 @@ import { MapView, type MarkerInfo } from './components/MapView';
 import { Sidebar } from './components/Sidebar';
 import { labelMap, type DatasetKey, type DatasetState, initialDatasetState } from './core/datasets';
 import { ObjectsIn, closestTo, getCommune, isInCorsica, loadGeoJSON } from './core/engine';
+import { roadDistancesFrom, FALLBACK_DISTANCE_KM } from './core/distance';
 import { ObjectKeyfromObj, Point, toWGS, type Commune, type QueryObject } from './core/types';
 import { type ActiveTab } from './core/tabs';
 
 const palette = ['#22c55e', '#a855f7', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#6366f1', '#14b8a6'];
 
 type ProfilMarker = MarkerInfo;
+
+type SelectedWithMeta = { item: QueryObject; dataset: DatasetKey };
+
+type AnamorphoseLayer = {
+    features: GeoJSONType.Feature<GeoJSONType.MultiPolygon>[];
+    warpedFeatures: GeoJSONType.Feature<GeoJSONType.MultiPolygon>[];
+    weights: Record<string, number>;
+    backgroundWeight: number;
+    minKm: number;
+    maxKm: number;
+    minDuration: number;
+    maxDuration: number;
+    details: Array<{ label: string; km: number; durationMin: number }>;
+    kmByCommune: Record<string, number>;
+    durationByCommune: Record<string, number>;
+};
 
 const generateColors = (count: number): string[] => {
     const colors: string[] = [];
@@ -131,6 +148,11 @@ function App() {
     } | null>(null);
     const [heatmapLoading, setHeatmapLoading] = useState(false);
     const [heatmapError, setHeatmapError] = useState<string | null>(null);
+    const [anamorphoseState, setAnamorphoseState] = useState<{ loading: boolean; error: string | null; layer: AnamorphoseLayer | null }>({
+        loading: false,
+        error: null,
+        layer: null
+    });
 
     const corsicaCenter: [number, number] = [42.0396, 9.0129];
 
@@ -139,6 +161,7 @@ function App() {
         setBase(null);
         setBaseLambert(null);
         setDatasets(initialDatasetState());
+        setAnamorphoseState({ loading: false, error: null, layer: null });
     }, []);
 
     const ensureCommunePolygons = useCallback(async (): Promise<GeoJSONType.Feature<GeoJSONType.MultiPolygon>[]> => {
@@ -323,6 +346,7 @@ function App() {
             });
             return next;
         });
+        setAnamorphoseState(prev => ({ ...prev, layer: null }));
     };
 
     const handleTabChange = (tab: ActiveTab) => {
@@ -347,6 +371,130 @@ function App() {
     const handleHeatmapCategoryChange = (category: string) => {
         setHeatmapCategory(category);
     };
+
+    const selectedObjects = useMemo<SelectedWithMeta[]>(() => {
+        return (Object.keys(datasets) as DatasetKey[]).flatMap(datasetKey =>
+            Object.values(datasets[datasetKey].selectedItems).map(item => ({ item, dataset: datasetKey }))
+        );
+    }, [datasets]);
+
+    const runAnamorphose = useCallback(async () => {
+        if (!base) {
+            setAnamorphoseState(prev => ({ ...prev, error: 'Sélectionnez un point de départ sur la carte pour lancer l\'anamorphose.' }));
+            return;
+        }
+        if (selectedObjects.length === 0) {
+            setAnamorphoseState(prev => ({ ...prev, error: 'Ajoutez au moins un point (via les listes) avant de lancer l\'anamorphose.' }));
+            return;
+        }
+
+        setAnamorphoseState({ loading: true, error: null, layer: null });
+        try {
+            const features = await ensureCommunePolygons();
+            const targets = selectedObjects.map(sel => new Point(sel.item.coordonnees));
+            const distances = await roadDistancesFrom(base, targets);
+
+            const detailList = selectedObjects.map((sel, idx) => ({
+                label: buildMarkerLabel(sel.dataset, sel.item),
+                km: distances[idx]?.distanceKm ?? FALLBACK_DISTANCE_KM,
+                durationMin: distances[idx]?.durationMin ?? Number.POSITIVE_INFINITY
+            }));
+
+            const validDistances = detailList.filter(d => d.km < FALLBACK_DISTANCE_KM && d.durationMin < Number.POSITIVE_INFINITY);
+            if (validDistances.length === 0) {
+                setAnamorphoseState({ loading: false, error: 'Distances routières indisponibles pour l\'instant (OSRM). Réessayez plus tard.', layer: null });
+                return;
+            }
+
+            const byCommune: Record<string, number> = {};
+            const durationByCommune: Record<string, number> = {};
+            distances.forEach((entry, idx) => {
+                const km = entry?.distanceKm ?? FALLBACK_DISTANCE_KM;
+                const dur = entry?.durationMin ?? Number.POSITIVE_INFINITY;
+                const communeName = selectedObjects[idx].item.commune ?? `Point ${idx + 1}`;
+                if (km >= FALLBACK_DISTANCE_KM) return;
+                const current = byCommune[communeName];
+                byCommune[communeName] = current == null ? km : Math.min(current, km);
+                const curDur = durationByCommune[communeName];
+                durationByCommune[communeName] = curDur == null ? dur : Math.min(curDur, dur);
+            });
+
+            const kmValues = Object.values(byCommune);
+            const durationValues = Object.values(durationByCommune).filter(v => Number.isFinite(v));
+            const maxKm = kmValues.length ? Math.max(...kmValues) : 1;
+            const minKm = kmValues.length ? Math.min(...kmValues) : 0;
+            const maxDuration = durationValues.length ? Math.max(...durationValues) : Number.POSITIVE_INFINITY;
+            const minDuration = durationValues.length ? Math.min(...durationValues) : Number.POSITIVE_INFINITY;
+            const backgroundWeight = durationValues.length ? Math.max(0.5, minDuration * 0.01) : 1;
+            const weights: Record<string, number> = {};
+
+            features.forEach(feature => {
+                const name = (feature.properties as any)?.nom ?? 'Commune';
+                const dur = durationByCommune[name];
+                const value = dur == null || dur === Number.POSITIVE_INFINITY ? backgroundWeight : Math.max(0.001, dur + 0.2);
+                weights[name] = value;
+            });
+
+            const warpFeature = (feature: GeoJSONType.Feature<GeoJSONType.MultiPolygon>): GeoJSONType.Feature<GeoJSONType.MultiPolygon> => {
+                const geom = feature.geometry;
+                if (!geom || geom.type !== 'MultiPolygon') return feature;
+
+                const baseLambert = base!.toLambert();
+                const durationSpan = Number.isFinite(maxDuration) && Number.isFinite(minDuration) ? Math.max(1, maxDuration - Math.max(minDuration, 0)) : 1;
+                const maxFactor = 2.2;
+                const minFactor = 0.6;
+
+                const warpCoord = ([lon, lat]: [number, number]): [number, number] => {
+                    const [x, y] = new Point([lat, lon]).toLambert();
+                    const dx = x - baseLambert[0];
+                    const dy = y - baseLambert[1];
+                    const distKm = Math.sqrt(dx * dx + dy * dy) / 1000;
+                    const name = (feature.properties as any)?.nom ?? 'Commune';
+                    const dur = durationByCommune[name];
+                    const baseVal = Number.isFinite(dur) ? dur : distKm;
+                    const raw = 1 + (baseVal - (Number.isFinite(minDuration) ? minDuration : 0)) / durationSpan;
+                    const factor = Math.max(minFactor, Math.min(maxFactor, raw));
+                    const warped: [number, number] = [baseLambert[0] + dx * factor, baseLambert[1] + dy * factor];
+                    const [latW, lonW] = toWGS([warped[0], warped[1]]);
+                    return [lonW, latW];
+                };
+
+                const warpedCoords = geom.coordinates.map(poly =>
+                    poly.map(ring => ring.map(coord => warpCoord(coord as [number, number])))
+                );
+
+                return {
+                    ...feature,
+                    geometry: {
+                        type: 'MultiPolygon',
+                        coordinates: warpedCoords
+                    }
+                };
+            };
+
+            const warpedFeatures = features.map(warpFeature);
+
+            setAnamorphoseState({
+                loading: false,
+                error: null,
+                layer: {
+                    features,
+                    warpedFeatures,
+                    weights,
+                    backgroundWeight,
+                    minKm,
+                    maxKm,
+                    minDuration,
+                    maxDuration,
+                    details: detailList,
+                    kmByCommune: byCommune,
+                    durationByCommune
+                }
+            });
+        } catch (e: any) {
+            setAnamorphoseState({ loading: false, error: e?.message ?? 'Impossible de générer l\'anamorphose.', layer: null });
+        }
+    }, [base, ensureCommunePolygons, selectedObjects]);
 
     useEffect(() => {
         if (activeTab !== 'heatmap') return;
@@ -482,6 +630,9 @@ function App() {
                         breakdownFor: (name: string) => heatmapData?.breakdown[name],
                         hasZero: Object.values(heatmapData?.counts ?? {}).some(v => v === 0)
                     } : null}
+                    anamorphoseLayer={activeTab === 'anamorphose' ? anamorphoseState.layer : null}
+                    anamorphoseLoading={anamorphoseState.loading}
+                    anamorphoseError={activeTab === 'anamorphose' ? anamorphoseState.error : null}
                 />
             </div>
             <Sidebar
@@ -506,6 +657,9 @@ function App() {
                 onHeatmapDatasetChange={handleHeatmapDatasetChange}
                 onHeatmapCategoryChange={handleHeatmapCategoryChange}
                 onProfilMarkersChange={setProfilMarkers}
+                onRunAnamorphose={runAnamorphose}
+                anamorphoseLoading={anamorphoseState.loading}
+                anamorphoseError={activeTab === 'anamorphose' ? anamorphoseState.error : null}
             />
         </div>
     );

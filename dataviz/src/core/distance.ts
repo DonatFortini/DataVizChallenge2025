@@ -14,11 +14,17 @@ export type DistanceMode = 'car';
 
 export type DistanceResult = {
     distanceKm: number;
+    durationMin: number;
     mode: DistanceMode;
 };
 
-const roadDistanceCache = new Map<string, number>();
-const inFlightRequests = new Map<string, Promise<number | null>>();
+type DistanceDuration = {
+    distanceKm: number;
+    durationMin: number;
+};
+
+const roadDistanceCache = new Map<string, DistanceDuration>();
+const inFlightRequests = new Map<string, Promise<DistanceDuration | null>>();
 
 let activeCount = 0;
 const queue: Array<() => void> = [];
@@ -62,14 +68,14 @@ function buildTableUrl(origin: Point, targets: Point[]): string {
         .map((p) => `${p.longitude},${p.latitude}`)
         .join(';');
     const destinations = targets.map((_, i) => i + 1).join(';');
-    return `${baseUrl}/table/v1/driving/${coords}?annotations=distance&sources=0&destinations=${destinations}`;
+    return `${baseUrl}/table/v1/driving/${coords}?annotations=distance,duration&sources=0&destinations=${destinations}`;
 }
 
 function sleep(ms: number) {
     return new Promise<void>((res) => setTimeout(res, ms));
 }
 
-async function fetchRoadDistanceKmRaw(url: string): Promise<number | null> {
+async function fetchRouteData(url: string): Promise<DistanceDuration | null> {
     let lastError: unknown;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -91,10 +97,13 @@ async function fetchRoadDistanceKmRaw(url: string): Promise<number | null> {
             } else {
                 const data = await resp.json();
                 const meters = data?.routes?.[0]?.distance;
+                const seconds = data?.routes?.[0]?.duration;
                 if (typeof meters !== 'number' || !Number.isFinite(meters)) {
                     return null;
                 }
-                return meters / 1000;
+                const km = meters / 1000;
+                const min = typeof seconds === 'number' && Number.isFinite(seconds) ? seconds / 60 : Number.POSITIVE_INFINITY;
+                return { distanceKm: km, durationMin: min };
             }
         } catch (err) {
             lastError = err;
@@ -112,10 +121,10 @@ async function fetchRoadDistanceKmRaw(url: string): Promise<number | null> {
     return null;
 }
 
-async function fetchCarDistancesKmTable(
+async function fetchCarDistancesTable(
     origin: Point,
     targets: Point[]
-): Promise<(number | null)[]> {
+): Promise<(DistanceDuration | null)[]> {
     if (!targets.length) return [];
 
     const url = buildTableUrl(origin, targets);
@@ -139,21 +148,23 @@ async function fetchCarDistancesKmTable(
                 }
             } else {
                 const data = await resp.json();
-                const table = data?.distances?.[0];
+                const distRow = data?.distances?.[0];
+                const durRow = data?.durations?.[0];
 
-                if (!Array.isArray(table)) {
+                if (!Array.isArray(distRow) || !Array.isArray(durRow)) {
                     return targets.map(() => null);
                 }
 
-                const distances: (number | null)[] = [];
+                const out: (DistanceDuration | null)[] = [];
                 for (let i = 0; i < targets.length; i++) {
-                    const entry = table[i];
-                    distances.push(
-                        typeof entry === 'number' && Number.isFinite(entry) ? entry / 1000 : null
-                    );
+                    const dMeters = distRow[i];
+                    const dSeconds = durRow[i];
+                    const km = typeof dMeters === 'number' && Number.isFinite(dMeters) ? dMeters / 1000 : null;
+                    const min = typeof dSeconds === 'number' && Number.isFinite(dSeconds) ? dSeconds / 60 : null;
+                    out.push(km == null || min == null ? null : { distanceKm: km, durationMin: min });
                 }
 
-                return distances;
+                return out;
             }
         } catch (err) {
             lastError = err;
@@ -172,7 +183,7 @@ async function fetchCarDistancesKmTable(
     return targets.map(() => null);
 }
 
-async function fetchCarDistanceKm(a: Point, b: Point): Promise<number | null> {
+async function fetchCarDistance(a: Point, b: Point): Promise<DistanceDuration | null> {
     const key = buildCacheKey(a, b);
 
     if (roadDistanceCache.has(key)) {
@@ -185,13 +196,13 @@ async function fetchCarDistanceKm(a: Point, b: Point): Promise<number | null> {
 
     const url = buildOsrmUrl(a, b);
 
-    const promise = schedule<number | null>(async () => {
+    const promise = schedule<DistanceDuration | null>(async () => {
         try {
-            const km = await fetchRoadDistanceKmRaw(url);
-            if (km != null) {
-                roadDistanceCache.set(key, km);
+            const data = await fetchRouteData(url);
+            if (data != null) {
+                roadDistanceCache.set(key, data);
             }
-            return km;
+            return data;
         } finally {
             inFlightRequests.delete(key);
         }
@@ -206,9 +217,10 @@ export async function roadDistanceBetween(
     a: Point,
     b: Point
 ): Promise<DistanceResult> {
-    const carKm = await fetchCarDistanceKm(a, b);
+    const res = await fetchCarDistance(a, b);
     return {
-        distanceKm: carKm ?? FALLBACK_DISTANCE_KM,
+        distanceKm: res?.distanceKm ?? FALLBACK_DISTANCE_KM,
+        durationMin: res?.durationMin ?? Number.POSITIVE_INFINITY,
         mode: 'car',
     };
 }
@@ -216,10 +228,10 @@ export async function roadDistanceBetween(
 export async function roadDistancesFrom(
     origin: Point,
     targets: Point[]
-): Promise<number[]> {
+): Promise<DistanceDuration[]> {
     if (!targets.length) return [];
 
-    const results = new Array<number>(targets.length).fill(FALLBACK_DISTANCE_KM);
+    const results = new Array<DistanceDuration>(targets.length).fill({ distanceKm: FALLBACK_DISTANCE_KM, durationMin: Number.POSITIVE_INFINITY });
     const missingIndices: number[] = [];
     const missingPoints: Point[] = [];
 
@@ -245,13 +257,13 @@ export async function roadDistancesFrom(
                 await sleep(500); // 500ms delay between batches
             }
 
-            const sliceDistances = await schedule(() => fetchCarDistancesKmTable(origin, slice));
+            const sliceDistances = await schedule(() => fetchCarDistancesTable(origin, slice));
 
-            sliceDistances.forEach((km, i) => {
+            sliceDistances.forEach((entry, i) => {
                 const targetIdx = sliceIndices[i];
-                if (km != null) {
-                    results[targetIdx] = km;
-                    roadDistanceCache.set(buildCacheKey(origin, targets[targetIdx]), km);
+                if (entry != null) {
+                    results[targetIdx] = entry;
+                    roadDistanceCache.set(buildCacheKey(origin, targets[targetIdx]), entry);
                 }
             });
         }

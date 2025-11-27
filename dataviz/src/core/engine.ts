@@ -234,7 +234,7 @@ export async function closestTo(
         const withDistances: Array<{ obj: QueryObject; distanceKm: number; approxKm: number }> = osrmTargets.map(
             (c, idx) => ({
                 obj: c.obj,
-                distanceKm: distances[idx] ?? FALLBACK_DISTANCE_KM,
+                distanceKm: distances[idx]?.distanceKm ?? FALLBACK_DISTANCE_KM,
                 approxKm: c.approxKm,
             })
         );

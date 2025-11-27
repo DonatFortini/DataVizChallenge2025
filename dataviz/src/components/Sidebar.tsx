@@ -32,6 +32,9 @@ type SidebarProps = {
     onHeatmapDatasetChange: (dataset: DatasetKey) => void;
     onHeatmapCategoryChange: (category: string) => void;
     onProfilMarkersChange: (markers: MarkerInfo[]) => void;
+    onRunAnamorphose: () => void;
+    anamorphoseLoading: boolean;
+    anamorphoseError: string | null;
 };
 
 export function Sidebar({
@@ -54,7 +57,10 @@ export function Sidebar({
     heatmapError,
     onHeatmapDatasetChange,
     onHeatmapCategoryChange,
-    onProfilMarkersChange
+    onProfilMarkersChange,
+    onRunAnamorphose,
+    anamorphoseLoading,
+    anamorphoseError
 }: SidebarProps) {
     const headerText = activeTab === 'anamorphose'
         ? 'Cliquez sur la carte pour sélectionner un point et composer l’anamorphose.'
@@ -148,9 +154,9 @@ export function Sidebar({
                     if (best) {
                         try {
                             const target = new Point(best.coordonnees);
-                            const { distanceKm } = await roadDistanceBetween(basePoint, target);
-                            const safeKm = distanceKm >= 100000 ? null : distanceKm;
-                            minutes = safeKm != null ? Math.round((safeKm / SPEED_KMH) * 60) : null;
+                        const { distanceKm, durationMin } = await roadDistanceBetween(basePoint, target);
+                        const safeKm = distanceKm >= 100000 ? null : distanceKm;
+                        minutes = durationMin < Number.POSITIVE_INFINITY ? Math.round(durationMin) : safeKm != null ? Math.round((safeKm / SPEED_KMH) * 60) : null;
                         } catch {
                             minutes = null;
                         }
@@ -272,6 +278,20 @@ export function Sidebar({
                             onToggleCollapse={(k) => setCollapsed(prev => ({ ...prev, [k]: !prev[k] }))}
                         />
                     ))}
+                    <div className="section">
+                        <div className="section-body">
+                            <button
+                                className="primary-btn"
+                                type="button"
+                                onClick={onRunAnamorphose}
+                                disabled={anamorphoseLoading || selectionCount === 0 || !hasBase}
+                            >
+                                {anamorphoseLoading ? 'Calcul de l’anamorphose...' : 'Tracer l’anamorphose'}
+                            </button>
+                            <p className="small muted">Utilise /table OSRM à partir du point sélectionné vers les objets choisis pour déformer la carte.</p>
+                            {anamorphoseError && <p className="small error-text">{anamorphoseError}</p>}
+                        </div>
+                    </div>
                     <div className="section reset-row">
                         <div className="section-body">
                             <button

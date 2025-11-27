@@ -2,9 +2,10 @@ import { MapContainer, TileLayer, GeoJSON, Marker, LayerGroup, useMapEvents, Too
 import { useEffect } from 'react';
 import L from 'leaflet';
 import type * as GeoJSONType from 'geojson';
+import * as d3 from 'd3';
 
 import { Point } from '../core/types';
-
+import { FALLBACK_DISTANCE_KM } from '../core/distance';
 
 const DefaultIcon = (color: string) => L.divIcon({
     className: 'custom-marker',
@@ -107,6 +108,17 @@ type HeatmapLayer = {
     hasZero?: boolean;
 };
 
+type AnamorphoseLayer = {
+    features: GeoJSONType.Feature<GeoJSONType.MultiPolygon>[];
+    warpedFeatures: GeoJSONType.Feature<GeoJSONType.MultiPolygon>[];
+    weights: Record<string, number>;
+    backgroundWeight: number;
+    minKm: number;
+    maxKm: number;
+    details: Array<{ label: string; km: number }>;
+    kmByCommune: Record<string, number>;
+};
+
 type MapViewProps = {
     base: Point | null;
     baseLabel?: string;
@@ -117,6 +129,9 @@ type MapViewProps = {
     selectionEnabled?: boolean;
     heatmapLayer?: HeatmapLayer | null;
     heatmapLayerKey?: string;
+    anamorphoseLayer?: AnamorphoseLayer | null;
+    anamorphoseLoading?: boolean;
+    anamorphoseError?: string | null;
 };
 
 export function MapView({
@@ -128,9 +143,13 @@ export function MapView({
     onSelect,
     selectionEnabled = true,
     heatmapLayer,
-    heatmapLayerKey
+    heatmapLayerKey,
+    anamorphoseLayer,
+    anamorphoseLoading = false,
+    anamorphoseError = null
 }: MapViewProps) {
     const canSelect = selectionEnabled !== false;
+
     return (
         <div className="map-wrapper">
             <MapContainer center={corsicaCenter} zoom={8} scrollWheelZoom className="map">
@@ -143,6 +162,37 @@ export function MapView({
                 {canSelect && <ClickHandler onSelect={onSelect} />}
                 {communeFeature && (
                     <GeoJSON key={`${communeFeature.properties?.nom ?? 'commune'}`} data={communeFeature} style={{ color: '#2563eb', weight: 2 }} />
+                )}
+                {anamorphoseLayer && anamorphoseLayer.warpedFeatures.length > 0 && (
+                    <GeoJSON
+                        key="anamorphose-polygons"
+                        pane="heatmap"
+                        data={{ type: 'FeatureCollection', features: anamorphoseLayer.warpedFeatures } as GeoJSONType.FeatureCollection<GeoJSONType.MultiPolygon>}
+                        style={(feature) => {
+                            const name = (feature?.properties as any)?.nom ?? '';
+                            const dur = anamorphoseLayer.durationByCommune[name];
+                            const span = Math.max(1, (anamorphoseLayer.maxDuration || 1) - (anamorphoseLayer.minDuration || 0));
+                            const t = dur != null && dur < Number.POSITIVE_INFINITY
+                                ? 1 - Math.min(1, Math.max(0, (dur - (anamorphoseLayer.minDuration || 0)) / span))
+                                : 0;
+                            const color = d3.interpolateMagma(t);
+                            return {
+                                color: '#0f172a',
+                                weight: 1,
+                                fillColor: color,
+                                fillOpacity: 0.75,
+                                opacity: 1
+                            };
+                        }}
+                        onEachFeature={(feature, layer) => {
+                            const name = (feature?.properties as any)?.nom ?? 'Commune';
+                            const dur = anamorphoseLayer.durationByCommune[name];
+                            const km = anamorphoseLayer.kmByCommune[name];
+                            const label = dur != null && dur < Number.POSITIVE_INFINITY ? `${dur.toFixed(1)} min` : km != null && km < FALLBACK_DISTANCE_KM ? `${km.toFixed(1)} km` : 'distance inconnue (OSRM)';
+                            const content = `<div class="tooltip">${name} — ${label}</div>`;
+                            layer.bindTooltip(content, { direction: 'top', opacity: 0.95, className: '' });
+                        }}
+                    />
                 )}
                 {heatmapLayer && heatmapLayer.features.length > 0 && (
                     <GeoJSON
