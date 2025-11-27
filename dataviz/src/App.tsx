@@ -14,6 +14,7 @@ import {
     loadGeoJSON,
 } from './core/engine';
 import { roadDistancesFrom, FALLBACK_DISTANCE_KM } from './core/distance';
+import { buildCartogram } from './core/cartogram';
 import {
     ALL_CATEGORY,
     DATASET_KEYS,
@@ -49,6 +50,7 @@ type AnamorphoseLayer = {
     details: Array<{ label: string; km: number; durationMin: number }>;
     kmByCommune: Record<string, number>;
     durationByCommune: Record<string, number>;
+    warpPoint?: (coord: [number, number]) => [number, number];
 };
 
 const generateColors = (count: number): string[] => {
@@ -436,6 +438,14 @@ function App() {
                 durationByCommune[communeName] = curDur == null ? dur : Math.min(curDur, dur);
             });
 
+            if (commune?.name) {
+                const baseName = commune.name;
+                const currentKm = byCommune[baseName];
+                byCommune[baseName] = currentKm == null ? 0 : Math.min(currentKm, 0);
+                const currentDur = durationByCommune[baseName];
+                durationByCommune[baseName] = currentDur == null ? 0 : Math.min(currentDur, 0);
+            }
+
             const kmValues = Object.values(byCommune);
             const durationValues = Object.values(durationByCommune).filter(v => Number.isFinite(v));
             const maxKm = kmValues.length ? Math.max(...kmValues) : 1;
@@ -448,48 +458,11 @@ function App() {
             features.forEach(feature => {
                 const name = (feature.properties as any)?.nom ?? 'Commune';
                 const dur = durationByCommune[name];
-                const value = dur == null || dur === Number.POSITIVE_INFINITY ? backgroundWeight : Math.max(0.001, dur + 0.2);
+                const value = dur == null || dur === Number.POSITIVE_INFINITY ? backgroundWeight : Math.max(backgroundWeight, dur + 0.5);
                 weights[name] = value;
             });
 
-            const warpFeature = (feature: GeoJSONType.Feature<GeoJSONType.MultiPolygon>): GeoJSONType.Feature<GeoJSONType.MultiPolygon> => {
-                const geom = feature.geometry;
-                if (!geom || geom.type !== 'MultiPolygon') return feature;
-
-                const baseLambert = base!.toLambert();
-                const durationSpan = Number.isFinite(maxDuration) && Number.isFinite(minDuration) ? Math.max(1, maxDuration - Math.max(minDuration, 0)) : 1;
-                const maxFactor = 2.2;
-                const minFactor = 0.6;
-
-                const warpCoord = ([lon, lat]: [number, number]): [number, number] => {
-                    const [x, y] = new Point([lat, lon]).toLambert();
-                    const dx = x - baseLambert[0];
-                    const dy = y - baseLambert[1];
-                    const distKm = Math.sqrt(dx * dx + dy * dy) / 1000;
-                    const name = (feature.properties as any)?.nom ?? 'Commune';
-                    const dur = durationByCommune[name];
-                    const baseVal = Number.isFinite(dur) ? dur : distKm;
-                    const raw = 1 + (baseVal - (Number.isFinite(minDuration) ? minDuration : 0)) / durationSpan;
-                    const factor = Math.max(minFactor, Math.min(maxFactor, raw));
-                    const warped: [number, number] = [baseLambert[0] + dx * factor, baseLambert[1] + dy * factor];
-                    const [latW, lonW] = toWGS([warped[0], warped[1]]);
-                    return [lonW, latW];
-                };
-
-                const warpedCoords = geom.coordinates.map(poly =>
-                    poly.map(ring => ring.map(coord => warpCoord(coord as [number, number])))
-                );
-
-                return {
-                    ...feature,
-                    geometry: {
-                        type: 'MultiPolygon',
-                        coordinates: warpedCoords
-                    }
-                };
-            };
-
-            const warpedFeatures = features.map(warpFeature);
+            const { warpedFeatures, warpPoint } = buildCartogram(features, weights, { iterations: 8, backgroundValue: backgroundWeight });
 
             setAnamorphoseState({
                 loading: false,
@@ -505,13 +478,14 @@ function App() {
                     maxDuration,
                     details: detailList,
                     kmByCommune: byCommune,
-                    durationByCommune
+                    durationByCommune,
+                    warpPoint
                 }
             });
         } catch (e: any) {
             setAnamorphoseState({ loading: false, error: e?.message ?? 'Impossible de générer l\'anamorphose.', layer: null });
         }
-    }, [base, ensureCommunePolygons, selectedObjects]);
+    }, [base, commune, ensureCommunePolygons, selectedObjects]);
 
     useEffect(() => {
         if (activeTab !== 'heatmap') return;
@@ -576,6 +550,21 @@ function App() {
         return selectionMarkers;
     }, [activeTab, profilMarkers, selectionMarkers]);
 
+    const anamorphoseWarp = anamorphoseState.layer?.warpPoint;
+
+    const warpedMarkers = useMemo<MarkerInfo[]>(() => {
+        if (activeTab !== 'anamorphose' || !anamorphoseWarp) return markerPositions;
+        return markerPositions.map(m => ({
+            ...m,
+            position: anamorphoseWarp(m.position)
+        }));
+    }, [activeTab, anamorphoseWarp, markerPositions]);
+
+    const warpedBase = useMemo<[number, number] | null>(() => {
+        if (activeTab !== 'anamorphose' || !anamorphoseWarp || !base) return null;
+        return anamorphoseWarp([base.latitude, base.longitude]);
+    }, [activeTab, anamorphoseWarp, base]);
+
     const selectedCount = useMemo(() => {
         return DATASET_KEYS.reduce((acc, key) => acc + Object.keys(datasets[key].selectedItems).length, 0);
     }, [datasets]);
@@ -629,10 +618,11 @@ function App() {
                     base={isInteractiveTab ? base : null}
                     baseLabel={baseMarkerLabel}
                     communeFeature={isInteractiveTab ? communeFeature : null}
-                    markerPositions={isInteractiveTab ? markerPositions : []}
+                    markerPositions={isInteractiveTab ? warpedMarkers : []}
                     corsicaCenter={corsicaCenter}
                     onSelect={handleMapClick}
                     selectionEnabled={isInteractiveTab}
+                    warpedBase={activeTab === 'anamorphose' ? warpedBase : null}
                     heatmapLayerKey={heatmapLayerKey}
                     heatmapLayer={activeTab === 'heatmap' && communeFeatures.length > 0 ? {
                         features: communeFeatures,

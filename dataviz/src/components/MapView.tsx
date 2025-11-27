@@ -120,11 +120,13 @@ type AnamorphoseLayer = {
     durationByCommune: Record<string, number>;
     maxDuration?: number;
     minDuration?: number;
+    warpPoint?: (coord: [number, number]) => [number, number];
 };
 
 type MapViewProps = {
     base: Point | null;
     baseLabel?: string;
+    warpedBase?: [number, number] | null;
     communeFeature: GeoJSONType.Feature | null;
     markerPositions: MarkerInfo[];
     corsicaCenter: [number, number];
@@ -140,6 +142,7 @@ type MapViewProps = {
 export function MapView({
     base,
     baseLabel,
+    warpedBase,
     communeFeature,
     markerPositions,
     corsicaCenter,
@@ -150,6 +153,12 @@ export function MapView({
     anamorphoseLayer,
 }: MapViewProps) {
     const canSelect = selectionEnabled !== false;
+
+    const basePosition = warpedBase && base
+        ? ([warpedBase[0], warpedBase[1]] as [number, number])
+        : base
+            ? ([base.latitude, base.longitude] as [number, number])
+            : null;
 
     return (
         <div className="map-wrapper">
@@ -239,8 +248,8 @@ export function MapView({
                         </Marker>
                     ))}
                 </LayerGroup>
-                {base && (
-                    <Marker position={[base.latitude, base.longitude]} icon={createColoredIcon('#ef4444')}>
+                {basePosition && (
+                    <Marker position={basePosition} icon={createColoredIcon('#ef4444')}>
                         <Tooltip opacity={0.95} direction="top" offset={[0, -6]}>
                             <div className="tooltip">{baseLabel ?? 'Point sélectionné'}</div>
                         </Tooltip>
