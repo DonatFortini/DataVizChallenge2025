@@ -15,6 +15,10 @@ import {
 } from './core/engine';
 import { roadDistancesFrom, FALLBACK_DISTANCE_KM } from './core/distance';
 import {
+    ALL_CATEGORY,
+    DATASET_KEYS,
+    createDatasetRecord,
+    formatCategoryLabel,
     initialDatasetState,
     labelMap,
     ObjectKeyfromObj,
@@ -147,12 +151,10 @@ function App() {
     const [communeFeatures, setCommuneFeatures] = useState<GeoJSONType.Feature<GeoJSONType.MultiPolygon>[]>([]);
 
     const [heatmapDataset, setHeatmapDataset] = useState<DatasetKey>('sante');
-    const [heatmapCategory, setHeatmapCategory] = useState<string>('all');
-    const [heatmapCategories, setHeatmapCategories] = useState<Record<DatasetKey, string[]>>({
-        etude: [],
-        sante: [],
-        sport: []
-    });
+    const [heatmapCategory, setHeatmapCategory] = useState<string>(ALL_CATEGORY);
+    const [heatmapCategories, setHeatmapCategories] = useState<Record<DatasetKey, string[]>>(
+        () => createDatasetRecord(() => [])
+    );
     const [profilMarkers, setProfilMarkers] = useState<ProfilMarker[]>([]);
     const [heatmapData, setHeatmapData] = useState<{
         counts: Record<string, number>;
@@ -195,7 +197,7 @@ function App() {
     const ensureHeatmapCategories = useCallback(async (dataset: DatasetKey) => {
         const existing = heatmapCategories[dataset];
         if (existing && existing.length > 0) return existing;
-        const allObjects = await ObjectsIn(dataset, 'all');
+        const allObjects = await ObjectsIn(dataset, ALL_CATEGORY);
         const categories = Array.from(new Set(allObjects.map(i => i.categorie).filter(Boolean)));
         setHeatmapCategories(prev => ({ ...prev, [dataset]: categories }));
         return categories;
@@ -205,7 +207,7 @@ function App() {
         ensureCommunePolygons().catch(() => {
             setHeatmapError('Impossible de charger la carte des communes.');
         });
-        (['etude', 'sante', 'sport'] as DatasetKey[]).forEach(dataset => {
+        DATASET_KEYS.forEach(dataset => {
             ensureHeatmapCategories(dataset).catch(() => null);
         });
     }, [ensureCommunePolygons, ensureHeatmapCategories]);
@@ -275,8 +277,7 @@ function App() {
             setBase(coords);
             setStatus('Chargement des données à proximité...');
 
-            await Promise.all((['etude', 'sante', 'sport'] as DatasetKey[])
-                .map(key => loadDataset(key, 'all', coords, foundCommune)));
+            await Promise.all(DATASET_KEYS.map(key => loadDataset(key, ALL_CATEGORY, coords, foundCommune)));
 
             setStatus(null);
         } catch (e: any) {
@@ -353,7 +354,7 @@ function App() {
     const clearSelectedItems = () => {
         setDatasets(prev => {
             const next: Record<DatasetKey, DatasetState> = { ...prev };
-            (Object.keys(next) as DatasetKey[]).forEach(key => {
+            DATASET_KEYS.forEach(key => {
                 next[key] = {
                     ...next[key],
                     selectedItems: {},
@@ -381,7 +382,7 @@ function App() {
 
     const handleHeatmapDatasetChange = (dataset: DatasetKey) => {
         setHeatmapDataset(dataset);
-        setHeatmapCategory('all');
+        setHeatmapCategory(ALL_CATEGORY);
     };
 
     const handleHeatmapCategoryChange = (category: string) => {
@@ -389,7 +390,7 @@ function App() {
     };
 
     const selectedObjects = useMemo<SelectedWithMeta[]>(() => {
-        return (Object.keys(datasets) as DatasetKey[]).flatMap(datasetKey =>
+        return DATASET_KEYS.flatMap(datasetKey =>
             Object.values(datasets[datasetKey].selectedItems).map(item => ({ item, dataset: datasetKey }))
         );
     }, [datasets]);
@@ -553,20 +554,19 @@ function App() {
     }, [commune]);
 
     const selectionMarkers = useMemo<MarkerInfo[]>(() => {
-        return (Object.keys(datasets) as DatasetKey[])
-            .flatMap(k => {
-                const ds = datasets[k];
-                return Object.entries(ds.selectedItems).map(([selectedKey, item]) => {
-                    const idx = ds.items.findIndex(i => ObjectKeyfromObj(i) === selectedKey);
-                    const color = ds.selectedColors[selectedKey] ?? ds.colors[idx] ?? randomColor();
-                    const [lat, lon] = item.coordonnees;
-                    return {
-                        position: [lat, lon] as [number, number],
-                        color,
-                        label: buildMarkerLabel(k, item)
-                    };
-                });
+        return DATASET_KEYS.flatMap(k => {
+            const ds = datasets[k];
+            return Object.entries(ds.selectedItems).map(([selectedKey, item]) => {
+                const idx = ds.items.findIndex(i => ObjectKeyfromObj(i) === selectedKey);
+                const color = ds.selectedColors[selectedKey] ?? ds.colors[idx] ?? randomColor();
+                const [lat, lon] = item.coordonnees;
+                return {
+                    position: [lat, lon] as [number, number],
+                    color,
+                    label: buildMarkerLabel(k, item)
+                };
             });
+        });
     }, [datasets]);
 
     const markerPositions = useMemo<MarkerInfo[]>(() => {
@@ -577,8 +577,7 @@ function App() {
     }, [activeTab, profilMarkers, selectionMarkers]);
 
     const selectedCount = useMemo(() => {
-        return (Object.keys(datasets) as DatasetKey[])
-            .reduce((acc, key) => acc + Object.keys(datasets[key].selectedItems).length, 0);
+        return DATASET_KEYS.reduce((acc, key) => acc + Object.keys(datasets[key].selectedItems).length, 0);
     }, [datasets]);
 
     const baseMarkerLabel = useMemo(() => {
@@ -612,7 +611,7 @@ function App() {
 
     const heatmapTitle = useMemo(() => {
         const datasetLabel = labelMap[heatmapDataset] ?? heatmapDataset;
-        const categoryLabel = heatmapCategory === 'all' ? 'Toutes catégories' : heatmapCategory;
+        const categoryLabel = formatCategoryLabel(heatmapCategory);
         return `${datasetLabel} • ${categoryLabel}`;
     }, [heatmapCategory, heatmapDataset]);
 

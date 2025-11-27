@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { Commune, QueryObject, DatasetKey } from '../core/types';
-import { Point } from '../core/types';
+import { DATASET_KEYS, Point, type Commune, type QueryObject, type DatasetKey } from '../core/types';
 export type AccessLevel = { label: string; color: string; icon: string };
 export type ParcoursStepKey = 'enfance' | 'adolescence' | 'adulte';
 export type ParcoursResult = {
@@ -110,8 +109,7 @@ export function ProfilSection({
 
     const plannedNeeds = useMemo(() => {
         const config = PARCOURS_CONFIG[focusedStep];
-        const items = (['etude', 'sante', 'sport'] as DatasetKey[])
-            .flatMap(domain => config[domain].map(cat => `${DOMAIN_LABELS[domain]} — ${cat}`));
+        const items = DATASET_KEYS.flatMap(domain => config[domain].map(cat => `${DOMAIN_LABELS[domain]} — ${cat}`));
         const tooltip = items.length
             ? `Besoins pré-remplis :\n${items.join('\n')}`
             : 'Aucun besoin pré-rempli';
@@ -151,7 +149,7 @@ export function ProfilSection({
                             </div>
                         </div>
                         <div className="parcours-extras">
-                            {(['etude', 'sante', 'sport'] as DatasetKey[]).map(domain => {
+                            {DATASET_KEYS.map(domain => {
                                 const options = categoriesByDomain[domain];
                                 const current = selectionDraft[focusedStep][domain];
                                 const label = domain === 'etude' ? 'Éducation' : domain === 'sante' ? 'Santé' : 'Sport';

@@ -90,6 +90,25 @@ export type DatasetItem = QueryObject & {
 
 export type DatasetKey = 'etude' | 'sante' | 'sport';
 
+export const DATASET_KEYS: readonly DatasetKey[] = ['etude', 'sante', 'sport'];
+export const ALL_CATEGORY = 'all';
+
+export const createDatasetRecord = <T,>(factory: () => T): Record<DatasetKey, T> => {
+    const acc = {} as Record<DatasetKey, T>;
+    DATASET_KEYS.forEach(key => {
+        acc[key] = factory();
+    });
+    return acc;
+};
+
+export const withAllCategory = (categories: readonly string[]) => [
+    ALL_CATEGORY,
+    ...Array.from(new Set(categories.filter(Boolean)))
+];
+
+export const formatCategoryLabel = (category: string) =>
+    category === ALL_CATEGORY ? 'Toutes les catégories' : category;
+
 export type DatasetState = {
     loading: boolean;
     items: DatasetItem[];
@@ -107,8 +126,14 @@ export const labelMap: Record<DatasetKey, string> = {
     sport: 'Sport'
 };
 
-export const initialDatasetState = (): Record<DatasetKey, DatasetState> => ({
-    etude: { loading: false, items: [], colors: [], categories: [], selectedCategory: 'all', selectedItems: {}, selectedColors: {}, error: null },
-    sante: { loading: false, items: [], colors: [], categories: [], selectedCategory: 'all', selectedItems: {}, selectedColors: {}, error: null },
-    sport: { loading: false, items: [], colors: [], categories: [], selectedCategory: 'all', selectedItems: {}, selectedColors: {}, error: null }
-});
+export const initialDatasetState = (): Record<DatasetKey, DatasetState> =>
+    createDatasetRecord(() => ({
+        loading: false,
+        items: [],
+        colors: [],
+        categories: [],
+        selectedCategory: ALL_CATEGORY,
+        selectedItems: {},
+        selectedColors: {},
+        error: null
+    }));

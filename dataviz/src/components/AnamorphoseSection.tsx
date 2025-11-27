@@ -1,4 +1,4 @@
-import { labelMap, ObjectKeyfromObj, type DatasetKey, type DatasetState, type QueryObject } from '../core/types';
+import { formatCategoryLabel, labelMap, ObjectKeyfromObj, withAllCategory, type DatasetKey, type DatasetState, type QueryObject } from '../core/types';
 
 type AnamorphoseSectionProps = {
     datasetKey: DatasetKey;
@@ -19,7 +19,7 @@ export function AnamorphoseSection({
     collapsed,
     onToggleCollapse
 }: AnamorphoseSectionProps) {
-    const categories = ['all', ...data.categories];
+    const categories = withAllCategory(data.categories);
     return (
         <div className="section">
             <button className="section-header" onClick={() => onToggleCollapse(datasetKey)} type="button">
@@ -34,7 +34,7 @@ export function AnamorphoseSection({
                     disabled={!hasBase || data.loading}
                 >
                     {categories.map(cat => (
-                        <option key={cat} value={cat}>{cat === 'all' ? 'Toutes les catégories' : cat}</option>
+                        <option key={cat} value={cat}>{formatCategoryLabel(cat)}</option>
                     ))}
                 </select>
             </button>

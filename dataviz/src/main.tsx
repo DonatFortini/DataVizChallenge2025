@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import { Home } from './Home';
 import { ObjectsIn, loadGeoJSON } from './core/engine';
-import type { DatasetKey } from './core/types';
+import { DATASET_KEYS, type DatasetKey } from './core/types';
 
 // React DevTools can choke on renderers that report an empty version (seen with some 3D libs).
 // Patch the hook in dev to force a fallback semver and avoid the "Invalid argument not valid semver" crash.
@@ -25,7 +25,7 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 }
 
 const App = lazy(() => import('./App'));
-const datasetsToPreload: DatasetKey[] = ['etude', 'sante', 'sport'];
+const datasetsToPreload: readonly DatasetKey[] = DATASET_KEYS;
 
 function LoadingScreen({ label }: { label: string }) {
   return (

@@ -1,4 +1,4 @@
-import { ObjectKeyfromProps, Point, type Commune, type Coordinates, type QueryObject, type DatasetKey } from "./types";
+import { ALL_CATEGORY, ObjectKeyfromProps, Point, type Commune, type Coordinates, type QueryObject, type DatasetKey } from "./types";
 import { point as turfPoint } from "@turf/helpers";
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { communes } from "./communes.data";
@@ -130,7 +130,7 @@ export async function ObjectsIn(
 
                 const results: QueryObject[] = [];
                 const normalizedCategory = (category ?? "").toString().toLowerCase();
-                const returnAll = normalizedCategory === "all";
+                const returnAll = normalizedCategory === ALL_CATEGORY;
 
                 for (const feature of geojson.features) {
                     const featureCategory =
