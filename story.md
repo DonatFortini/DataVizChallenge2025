@@ -6,6 +6,6 @@ Le but de cette viz'; c'est de montrer comment le territoire est réellement vé
 
 La Corse représente 8700km². 4eme plus grande, c'est par contre l'île la plus montagneuse de Méditerranée.
 
-Elle comporte Xkm de route, contre Y, Z, pour les autres îles.
+Elle comporte près de 8000km de route, contre Y, Z, pour les autres îles.
 
 Cette forte élévation transforme profondément le territoire, et la façon d'y vivre. En fait, si elle était aplatie, la corse gagnerait près de 1000km² supplémentaires.

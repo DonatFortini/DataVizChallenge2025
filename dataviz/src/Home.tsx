@@ -1,6 +1,6 @@
 import { useState, useEffect, Suspense, useRef, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { useGLTF, Environment, Resize } from '@react-three/drei';
+import { useGLTF, Environment, Resize, useAnimations } from '@react-three/drei';
 import * as THREE from 'three';
 
 // Construct the URL correctly based on Vite's public dir behavior
@@ -16,16 +16,29 @@ function InteractionRig({ children }: { children: React.ReactNode }) {
 
   useFrame((state) => {
     // Target rotation based on mouse position (state.pointer is normalized -1 to 1)
-    // Side-to-side movement (x) causes tilt (z rotation)
-    const targetZ = -state.pointer.x * 0.2; 
-    // Up-down movement (y) causes pitch (x rotation)
-    const targetX = -state.pointer.y * 0.2;
+    
+    // --- DEGREES OF FREEDOM SETTINGS ---
+    
+    // 1. Z-Axis Rotation (Tilt Left/Right)
+    // Controlled by mouse X position. 
+    // Change '0.2' to increase/decrease the tilt amount.
+    const targetZ = -state.pointer.x * 0.4; 
+
+    // 2. X-Axis Rotation (Tilt Up/Down)
+    // Controlled by mouse Y position.
+    // Change '0.2' to increase/decrease the pitch amount.
+    const targetX = -state.pointer.y * 0.4;
 
     // Smoothly interpolate current rotation to target
     if (group.current) {
+        // Apply X rotation (Pitch)
         group.current.rotation.x = THREE.MathUtils.lerp(group.current.rotation.x, targetX, 0.1);
+        
+        // Apply Z rotation (Roll)
         group.current.rotation.z = THREE.MathUtils.lerp(group.current.rotation.z, targetZ, 0.1);
-        // Ensure Y rotation stays at 0 (no spin)
+        
+        // 3. Y-Axis Rotation (Yaw/Spin)
+        // Currently locked to 0. Change '0' to allow rotation or bind it to mouse input.
         group.current.rotation.y = THREE.MathUtils.lerp(group.current.rotation.y, 0, 0.1);
     }
   });
@@ -34,11 +47,47 @@ function InteractionRig({ children }: { children: React.ReactNode }) {
 }
 
 // Placeholder for the model component
-function Model({ url }: { url: string }) {
-  const { scene } = useGLTF(url);
+function Model({ url, step = 0 }: { url: string, step?: number }) {
+  const { scene, animations } = useGLTF(url);
   // Clone the scene so we can use it in multiple places simultaneously
-  const clonedScene = useMemo(() => scene.clone(), [scene]);
+  const clonedScene = useMemo(() => {
+    const clone = scene.clone();
+    // Enable shadows for all meshes in the model
+    clone.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+        }
+    });
+    return clone;
+  }, [scene]);
   const ref = useRef<THREE.Group>(null!);
+  const { actions, names } = useAnimations(animations, ref);
+  const hasPlayed = useRef(false);
+
+  useEffect(() => {
+    console.log("Model Debug:", { step, names, hasPlayed: hasPlayed.current });
+
+    if (names.length > 0) {
+        const action = actions[names[0]];
+
+        if (step === 1 && action) {
+            // Play if we haven't played since entering this step
+            if (!hasPlayed.current) {
+                console.log("Playing animation for step 1");
+                action.reset();
+                action.setLoop(THREE.LoopOnce, 1);
+                action.clampWhenFinished = true;
+                action.play();
+                hasPlayed.current = true;
+            }
+        } else {
+            // Reset the flag when we leave step 1, so it can play again when we return
+            if (hasPlayed.current) console.log("Resetting animation flag");
+            hasPlayed.current = false;
+        }
+    }
+  }, [step, actions, names]);
 
   return (
     <group ref={ref}>
@@ -52,10 +101,12 @@ function Model({ url }: { url: string }) {
 
 export function Home() {
   const [scrollY, setScrollY] = useState(0);
+  const [activeStep, setActiveStep] = useState(0); // 0: None, 1: Card 1, 2: Card 2
   const [parallax, setParallax] = useState({ x: 0, y: 0 });
   const textRef = useRef<HTMLDivElement>(null);
   const card1Ref = useRef<HTMLDivElement>(null);
   const card2Ref = useRef<HTMLDivElement>(null);
+  const card3Ref = useRef<HTMLDivElement>(null);
   
   useEffect(() => {
     const handleScroll = () => {
@@ -78,9 +129,14 @@ export function Home() {
             entries.forEach((entry) => {
                 if (entry.isIntersecting) {
                     if (entry.target === card1Ref.current) {
-                        console.log("EVENT: First card is visible!");
+                        console.log("Observer: Card 1 visible");
+                        setActiveStep(1);
                     } else if (entry.target === card2Ref.current) {
-                        console.log("EVENT: Second card is visible!");
+                        console.log("Observer: Card 2 visible");
+                        setActiveStep(2);
+                    } else if (entry.target === card3Ref.current) {
+                        console.log("Observer: Card 3 visible");
+                        setActiveStep(3);
                     }
                 }
             });
@@ -90,6 +146,7 @@ export function Home() {
 
     if (card1Ref.current) observer.observe(card1Ref.current);
     if (card2Ref.current) observer.observe(card2Ref.current);
+    if (card3Ref.current) observer.observe(card3Ref.current);
 
     // Debug: Check if the file is reachable
     fetch(MODEL_URL)
@@ -148,10 +205,15 @@ export function Home() {
         className="fixed inset-0 pointer-events-auto"
         style={{ zIndex: 5 }}
       >
-        <Canvas camera={{ position: [0, 0, 5], fov: 50 }}>
-          <ambientLight intensity={0.5} />
-          <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} />
-          <pointLight position={[-10, -10, -10]} />
+        <Canvas shadows camera={{ position: [0, 0, 5], fov: 50 }}>
+          <ambientLight intensity={0.05} />
+          <directionalLight 
+            position={[5, 2, 5]} 
+            castShadow 
+            intensity={10} 
+            shadow-mapSize={[4096, 4096]} 
+            shadow-bias={-0.0005}
+          />
           
           <Suspense fallback={<mesh><boxGeometry /><meshStandardMaterial color="red" /></mesh>}>
              {/* Replace with your actual GLB file path in the public folder */}
@@ -192,24 +254,70 @@ export function Home() {
         <div className="min-h-screen flex items-start pointer-events-none border-4 border-black relative bg-white">
           
           {/* Left Side: Model Area */}
-          <div className="w-1/2 h-screen sticky top-0 flex items-center justify-center relative border-r-4 border-blue-200 border-dashed bg-blue-50/30 pointer-events-auto">
+          <div className="w-1/2 h-screen sticky top-0 flex items-center justify-center relative border-r-4 border-blue-200 border-dashed bg-blue-50/30 pointer-events-auto overflow-hidden">
              
-             {/* Second Model Instance */}
-             <div className="w-full h-full">
-                <Canvas camera={{ position: [0, 0, 5], fov: 50 }}>
-                  <ambientLight intensity={0.5} />
-                  <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} />
-                  <pointLight position={[-10, -10, -10]} />
+             {/* Second Model Instance - Fades out on step 2 or 3 */}
+             <div 
+                className="absolute inset-0 w-full h-full transition-opacity duration-1000 ease-in-out"
+                style={{ opacity: activeStep >= 2 ? 0 : 1 }}
+             >
+                <Canvas shadows camera={{ position: [0, 0, 5], fov: 50 }}>
+                  <ambientLight intensity={0.1} />
+                  <directionalLight 
+                    position={[5, 2, 5]} 
+                    castShadow 
+                    intensity={4} 
+                    shadow-mapSize={[2048, 2048]} 
+                    shadow-bias={-0.0005}
+                  />
                   
                   <Suspense fallback={null}>
                      <group position={[0, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
                         <InteractionRig>
-                            <Model url={MODEL_URL} />
+                            <Model url={MODEL_URL} step={activeStep} />
                         </InteractionRig>
                      </group>
                     <Environment preset="forest" />
                   </Suspense>
                 </Canvas>
+             </div>
+
+             {/* Image 1 - Fades in on step 2 */}
+             <div 
+                className="absolute inset-0 flex items-center justify-center transition-opacity duration-1000 ease-in-out pointer-events-none"
+                style={{ opacity: activeStep === 2 ? 1 : 0 }}
+             >
+                <div className="w-[90%] h-[90%] flex flex-col bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] p-4">
+                    <div className="flex-1 relative min-h-0 w-full overflow-hidden">
+                        <img 
+                            src={`${BASE_URL}commune_change.png`}
+                            alt="Changement de démogrpahie des communes" 
+                            className="absolute inset-0 w-full h-full object-cover scale-135" 
+                        />
+                    </div>
+                    <div className="mt-2 pt-2 border-t-2 border-gray-100 text-center shrink-0">
+                        <span className="text-sm font-mono text-gray-500">Evolution de la population des communes entre 1936 et 2022. Les communes sont déformées selon leur pourcentage de changement. Dans le cas le plus extrême, Borgu, la population a augmenté de 4000%.</span>
+                    </div>
+                </div>
+             </div>
+
+             {/* Image 2 - Fades in on step 3 */}
+             <div 
+                className="absolute inset-0 flex items-center justify-center transition-opacity duration-1000 ease-in-out pointer-events-none"
+                style={{ opacity: activeStep === 3 ? 1 : 0 }}
+             >
+                <div className="w-[90%] h-[90%] flex flex-col bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] p-4">
+                    <div className="flex-1 relative min-h-0 w-full overflow-hidden">
+                        <img 
+                            src="https://placehold.co/800x800/blue/white?text=Inegalites" 
+                            alt="Inégalités de territoire" 
+                            className="absolute inset-0 w-full h-full object-cover" 
+                        />
+                    </div>
+                    <div className="mt-2 pt-2 border-t-2 border-gray-100 text-center shrink-0">
+                        <span className="text-sm font-mono text-gray-500">Légende pour les inégalités de territoire...</span>
+                    </div>
+                </div>
              </div>
           </div>
 
@@ -217,9 +325,10 @@ export function Home() {
           <div className="w-1/2 flex flex-col border-l-4 border-dashed pointer-events-auto">
             
             {/* Card 1 Container */}
-            <div ref={card1Ref} className="h-screen flex items-center justify-center px-12">
+            <div className="h-screen flex items-center justify-center px-12">
                 {/* Card 1 */}
                 <div 
+                  ref={card1Ref}
                   className="max-w-xl bg-white border-4 border-black p-10 shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] transition-all duration-500 transform"
                   style={{ 
                     opacity: moveProgress >= 0.8 ? 1 : 0,
@@ -231,13 +340,15 @@ export function Home() {
                   </h2>
                   <div className="space-y-4 font-mono text-lg">
                     <p className="text-gray-600">
-                      La Corse représente une surface de près de 8700km². Elle est la plus montagneuse des trois grande îles de méditerranée occidentale. 
+                      La Corse représente une surface de près de 8700km². C'est la quatrième plus grande île de méditerranée, et la plus montagneuse de toutes. Elle comporte un grand nombre de vallées, et des sommets allant jusqu'à 2700 mètres d'altitudes.
+                      
+                      En fait, si on l'aplatissait complètement, elle gagnerait près de 1000km²*.
                     </p>
                     
                     {/* Separator and Footnotes */}
                     <div className="pt-4 mt-4 border-t-2 border-gray-200">
                         <p className="text-sm text-gray-400 italic">
-                            * Notes de bas de page
+                            * Calcul réalisé avec QGIS à partir du DEM fourni par l'IGN.
                         </p>
                     </div>
                   </div>
@@ -245,9 +356,10 @@ export function Home() {
             </div>
 
             {/* Card 2 Container */}
-            <div ref={card2Ref} className="h-screen flex items-center justify-center px-12">
+            <div className="h-screen flex items-center justify-center px-12">
                 {/* Card 2 */}
                 <div 
+                  ref={card2Ref}
                   className="max-w-xl bg-white border-4 border-black p-10 shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] transition-all duration-500 transform"
                   style={{ 
                     opacity: moveProgress >= 0.8 ? 1 : 0,
@@ -259,13 +371,49 @@ export function Home() {
                   </h2>
                   <div className="space-y-4 font-mono text-lg">
                     <p className="text-gray-600">
-                      Avec environ 350 000 habitants, la Corse a une densité de population relativement faible par rapport au continent.
+                      Avec environ 350 000 habitants en 2022¹, il y a eu une véritable explosion démographique depuis les deux guerres mondiales, qui avaient laissé la Corse exsangue: sa population passant de 290.000 habitants² en 1911 à 187.000 en 1936.
+                    </p>
+                    <p className="text-gray-600">
+                      Cette explosion a pris place inégalement dans le territoire, avec des communes presques entièrement vidées de leurs habitants, tandis que le reste de la population et des activités se sont concentrés dans quelques pôles urbains.
                     </p>
                     
                     {/* Separator and Footnotes */}
                     <div className="pt-4 mt-4 border-t-2 border-gray-200">
                         <p className="text-sm text-gray-400 italic">
-                            * Source: INSEE 2024
+                            1 Insee dossier complet région de Corse (94)
+                            2 Lefèvbre "La population de la Corse", 1957.
+                        </p>
+                    </div>
+                  </div>
+                </div>
+            </div>
+
+            {/* Card 3 Container */}
+            <div className="h-screen flex items-center justify-center px-12">
+                {/* Card 3 */}
+                <div 
+                  ref={card3Ref}
+                  className="max-w-xl bg-white border-4 border-black p-10 shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] transition-all duration-500 transform"
+                  style={{ 
+                    opacity: moveProgress >= 0.8 ? 1 : 0,
+                    transform: `translateY(${moveProgress >= 0.8 ? 0 : 20}px)`
+                  }}
+                >
+                  <h2 className="text-5xl font-bold mb-6 text-black uppercase decoration-4 underline-offset-4 border-b-4 border-black pb-2">
+                    Inégalités de territoire
+                  </h2>
+                  <div className="space-y-4 font-mono text-lg">
+                    <p className="text-gray-600">
+                      Cette concentration de la population a créé de fortes disparités. Les services publics, les emplois et les infrastructures se sont regroupés autour d'Ajaccio et de Bastia.
+                    </p>
+                    <p className="text-gray-600">
+                      L'intérieur des terres, autrefois vivant et agricole, souffre aujourd'hui d'un manque d'accès aux soins et aux services essentiels, créant une fracture territoriale majeure.
+                    </p>
+                    
+                    {/* Separator and Footnotes */}
+                    <div className="pt-4 mt-4 border-t-2 border-gray-200">
+                        <p className="text-sm text-gray-400 italic">
+                            * Source: Observatoire des territoires 2023
                         </p>
                     </div>
                   </div>
