@@ -1,10 +1,12 @@
-import { Suspense, useMemo, useRef } from 'react';
+import { Suspense, useMemo, useRef, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { useGLTF, Environment, Resize } from '@react-three/drei';
+import { useGLTF, Environment, Resize, useAnimations } from '@react-three/drei';
 import * as THREE from 'three';
 
 const BASE_URL = import.meta.env.BASE_URL;
 const MODEL_URL = `${BASE_URL}Isula.glb`;
+
+console.log("IsulaScene: Initializing with MODEL_URL =", MODEL_URL);
 
 useGLTF.preload(MODEL_URL);
 
@@ -22,10 +24,40 @@ function InteractionRig({ children }: { children: React.ReactNode }) {
   return <group ref={group}>{children}</group>;
 }
 
-function Model({ url }: { url: string }) {
-  const { scene } = useGLTF(url);
-  const clonedScene = useMemo(() => scene.clone(), [scene]);
+function Model({ url, step = 0 }: { url: string, step?: number }) {
+  const { scene, animations } = useGLTF(url);
+  const clonedScene = useMemo(() => {
+    const clone = scene.clone();
+    clone.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    return clone;
+  }, [scene]);
+  
   const ref = useRef<THREE.Group>(null!);
+  const { actions, names } = useAnimations(animations, ref);
+  const hasPlayed = useRef(false);
+
+  useEffect(() => {
+    if (names.length > 0) {
+      const action = actions[names[0]];
+      if (step === 1 && action) {
+        if (!hasPlayed.current) {
+          action.reset();
+          action.setLoop(THREE.LoopOnce, 1);
+          action.clampWhenFinished = true;
+          action.play();
+          hasPlayed.current = true;
+        }
+      } else {
+        if (hasPlayed.current) hasPlayed.current = false;
+      }
+    }
+  }, [step, actions, names]);
+
   return (
     <group ref={ref}>
       <Resize scale={4}>
@@ -43,20 +75,20 @@ const SceneLights = () => (
   </>
 );
 
-const ModelGroup = () => (
+const ModelGroup = ({ step }: { step: number }) => (
   <group position={[0, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
     <InteractionRig>
-      <Model url={MODEL_URL} />
+      <Model url={MODEL_URL} step={step} />
     </InteractionRig>
   </group>
 );
 
-export default function IsulaScene() {
+export default function IsulaScene({ step = 0 }: { step?: number }) {
   return (
     <Canvas camera={{ position: [0, 0, 5], fov: 50 }}>
       <SceneLights />
       <Suspense fallback={null}>
-        <ModelGroup />
+        <ModelGroup step={step} />
         <Environment preset="forest" />
       </Suspense>
     </Canvas>
