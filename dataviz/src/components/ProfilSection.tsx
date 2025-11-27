@@ -54,7 +54,6 @@ type ProfilSectionProps = {
     basePoint: Point | null;
     commune: Commune | null;
     hasBase: boolean;
-    speedKmh: number;
     extraNeeds: Record<ParcoursStepKey, { etude: string[]; sante: string[]; sport: string[] }>;
     selectionDraft: Record<ParcoursStepKey, { etude: string; sante: string; sport: string }>;
     categoriesByDomain: Record<DatasetKey, readonly string[]>;
@@ -71,7 +70,6 @@ type ProfilSectionProps = {
 
 export function ProfilSection({
     hasBase,
-    speedKmh,
     extraNeeds,
     selectionDraft,
     categoriesByDomain,
@@ -195,7 +193,7 @@ export function ProfilSection({
                         {needsDirty && hasBase && !loading && (
                             <p className="small muted">Des changements sont en attente d&apos;analyse.</p>
                         )}
-                        <p className="small muted">Rappel : temps estimés à {speedKmh} km/h en voiture.</p>
+                        <p className="small muted">Temps routiers calculés via OSRM.</p>
                     </div>
                     {error && <p className="small error-text">{error}</p>}
 

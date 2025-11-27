@@ -303,8 +303,7 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
                     (42.304918, 9.154972). Plus le trajet est long, plus la surface est étirée.
                   </p>
                   <p className="text-sm text-gray-500">
-                    Approximations prévues : centroïdes géométriques + vitesse moyenne 50km/h. En attente d&apos;intégration
-                    des données réelles de temps de trajet.
+                    Approximations prévues : centroïdes géométriques. Les données réelles de temps de trajet (OSRM) sont désormais utilisées.
                   </p>
                 </div>
               }

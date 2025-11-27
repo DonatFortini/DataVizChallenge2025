@@ -8,8 +8,6 @@ import { HeatmapSection } from './HeatmapSection';
 import { AnamorphoseSection } from './AnamorphoseSection';
 import { PARCOURS_CONFIG, PARCOURS_STEPS, type ParcoursResult, type ParcoursStepKey, ProfilSection, getAccessibilityLevel } from './ProfilSection';
 
-const SPEED_KMH = 50;
-
 type SidebarProps = {
     baseLambert: { x: number; y: number } | null;
     error: string | null;
@@ -152,9 +150,8 @@ export function Sidebar({
                     if (best) {
                         try {
                             const target = new Point(best.coordonnees);
-                            const { distanceKm, durationMin } = await roadDistanceBetween(basePoint, target);
-                            const safeKm = distanceKm >= 100000 ? null : distanceKm;
-                            minutes = durationMin < Number.POSITIVE_INFINITY ? Math.round(durationMin) : safeKm != null ? Math.round((safeKm / SPEED_KMH) * 60) : null;
+                            const { durationMin } = await roadDistanceBetween(basePoint, target);
+                            minutes = durationMin < Number.POSITIVE_INFINITY ? Math.round(durationMin) : null;
                         } catch {
                             minutes = null;
                         }
@@ -319,7 +316,6 @@ export function Sidebar({
                     basePoint={basePoint}
                     commune={commune}
                     hasBase={hasBase}
-                    speedKmh={SPEED_KMH}
                     extraNeeds={extraNeeds}
                     selectionDraft={selectionDraft}
                     categoriesByDomain={categoriesByDomain}
