@@ -47,7 +47,7 @@ function Model({ url, playAnimation = false, playOnce = false, playTrigger, loop
 
     const playClip = () => {
       action.reset();
-      action.setLoop(hasDelayLoop || playOnce ? THREE.LoopOnce : THREE.LoopRepeat, hasDelayLoop || playOnce ? 1 : Infinity);
+      action.setLoop(hasDelayLoop || playOnce ? THREE.LoopOnce : THREE.LoopPingPong, hasDelayLoop || playOnce ? 1 : Infinity);
       action.clampWhenFinished = true;
       action.enabled = true;
       action.paused = false;

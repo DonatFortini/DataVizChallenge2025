@@ -127,10 +127,12 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
   }, []);
 
   useEffect(() => {
+    console.log('📍 Carte active changée pour :', activeCard);
     if (activeCard === 'card1' && !hasPlayedAnimation) {
       setPlayAnimation(true);
       setPlayTrigger((t) => t + 1);
-      setHasPlayedAnimation(true);
+      //I know it's pointless, leave me be
+      setHasPlayedAnimation(false);
     } else if (activeCard !== 'card1') {
       setPlayAnimation(false);
     }
@@ -205,7 +207,7 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
               >
                 {showScene ? (
                   <Suspense fallback={null}>
-                    <LazyScene playAnimation={playAnimation} playOnce={false} loopWithDelayMs={2500} playTrigger={playTrigger} />
+                    <LazyScene playAnimation={playAnimation} playOnce={false} loopWithDelayMs={0} playTrigger={playTrigger} />
                   </Suspense>
                 ) : null}
               </div>
@@ -215,15 +217,15 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
                 style={{ opacity: leftStage === 'image' ? 1 : 0, pointerEvents: leftStage === 'image' ? 'auto' : 'none' }}
               >
                 <div className="w-full h-full flex flex-col items-center justify-center gap-4 p-6">
-                  <div className="w-full h-full bg-white border-4 border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,0.9)] flex items-center justify-center overflow-hidden">
+                  <div className="w-full h-full bg-[#efefef] border-4 border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,0.9)] flex items-center justify-center overflow-hidden">
                     <img
-                      src={`${BASE_URL}deformation_pop.png`}
+                      src={`${BASE_URL}Cool.png`}
                       alt="Déformation population"
-                      className="object-contain w-full h-full"
+                      className="object-contain w-full h-full mix-blend-multiply contrast-125"
                     />
                   </div>
-                  <p className="text-sm text-gray-600 bg-white border border-dashed border-black px-3 py-2">
-                    Evolution de la population des communes entre 1936 et 2022. Les communes sont déformées selon leur pourcentage de changement. Dans le cas le plus extrême, Borgu, la population a augmenté de 4000%.
+                  <p className="space-y-4 font-mono text-lg text-sm text-gray-600 bg-white border border-dashed border-black px-3 py-2">
+                    Déformation des communes en fonction de l'évolution de leur population entre 1936 et 2022. Des espaces blancs signifient que la commune s'est dépeuplée.
                   </p>
                 </div>
               </div>
@@ -267,7 +269,7 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
               }
               note="* Calcul réalisé avec QGIS à partir du DEM fourni par l'IGN. L'animation 3D Isula se joue ici une seule fois."
             />
-
+//Donette c'est horrible cette façon de construire les éléments je peux pas croire que c'est ça le gold standard
             <InfoCard
               ref={card2Ref}
               cardId="card2"
@@ -275,21 +277,22 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
               visible={moveProgress >= 0.8}
               body={
                 <div className="space-y-4 font-mono text-lg">
-                  <p className="text-gray-600">
-                    Avec environ 350 000 habitants en 2022¹, il y a eu une véritable explosion démographique depuis les
-                    deux guerres mondiales, qui avaient laissé la Corse exsangue : sa population passant de 290 000
-                    habitants² en 1911 à 187 000 en 1936.
-                  </p>
+                    <p className="text-gray-600">
+                      Avec environ 350 000 habitants en 2022¹, il y a eu une véritable explosion démographique depuis les deux guerres mondiales, qui avaient laissé la Corse exsangue: sa population passant de 290.000 habitants² en 1911 à 187.000 en 1936.
+                    </p>
+                    <p className="text-gray-600">
+                      Cette explosion a pris place inégalement dans le territoire, avec des communes presques entièrement vidées de leurs habitants, tandis que le reste de la population et des activités se sont concentrés dans quelques pôles urbains.
+                    </p>
 
                 </div>
               }
-              note="¹ Insee dossier complet région de Corse (94) • ² Lefèvbre «La population de la Corse», 1957."
+              note="¹ Insee dossier complet région de Corse (94) ² Lefèvbre «La population de la Corse», 1957."
             />
 
             <InfoCard
               ref={card3Ref}
               cardId="card3"
-              title="Cartogramme des trajets"
+              title="Territoire déformant"
               visible={moveProgress >= 0.9}
               overlay={
                 <p className="font-mono text-lg text-white font-bold animate-bounce inline-block px-4 py-2 bg-black/90 border-2 border-white shadow-[4px_4px_0px_0px_rgba(0,0,0,0.35)]">
@@ -298,16 +301,18 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
               }
               body={
                 <div className="space-y-3 text-gray-600">
-                  <p>
-                    Déformation des communes selon un temps de trajet estimé entre leur centroïde et l&apos;université
-                    (42.304918, 9.154972). Plus le trajet est long, plus la surface est étirée.
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    Approximations prévues : centroïdes géométriques. Les données réelles de temps de trajet (OSRM) sont désormais utilisées.
-                  </p>
+                    <p className="text-gray-600">
+                      Cette concentration de la population se renforce elle-même, avec les activités, les services publics, les emplois tendant à se rejoindre dans les plus grands pôles urbains.
+                    </p>
+                    <p className="text-gray-600">
+                      L'intérieur des terres, autrefois vivant et agricole, continue à se vider, poursuivant le processus d'exode rural entamé à l'échelle mondiale.
+                    </p>
+                    <p className="text-gray-600">
+                      D'ici 2050, il est estimé que deux tiers de la population mondiale vivront dans des villes¹. En attendant, cette transition transforme complètement l'expérience et la vision que deux corses peuvent avoir de l'île. 
+                    </p>
                 </div>
               }
-              note="* Placeholder visuel — cartogram-chart sera raccordé plus tard."
+              note="1 United Nations - World Urbanization Prospects 2025"
             />
           </div>
         </div>
