@@ -44,14 +44,17 @@ InfoCard.displayName = 'InfoCard';
 export function Home({ onEnterApp, prefetching = false, ready = false }: HomeProps) {
   const [scrollY, setScrollY] = useState(0);
   const [parallax, setParallax] = useState({ x: 0, y: 0 });
+  const [playAnimation, setPlayAnimation] = useState(false);
   const [showScene, setShowScene] = useState(false);
   const textRef = useRef<HTMLDivElement>(null);
   const card1Ref = useRef<HTMLDivElement>(null);
   const card2Ref = useRef<HTMLDivElement>(null);
+  const animationCardRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let activated = false;
+    setPlayAnimation(false);
     const activateScene = () => {
       if (!activated) {
         activated = true;
@@ -78,25 +81,31 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
             if (entry.target === sceneRef.current) {
               activateScene();
             }
+            if (entry.target === animationCardRef.current) {
+              setPlayAnimation(true);
+            }
+          } else if (entry.target === animationCardRef.current) {
+            setPlayAnimation(false);
           }
         });
       },
-      { threshold: 0.2 }
+      { threshold: 0.6 }
     );
 
     if (sceneRef.current) observer.observe(sceneRef.current);
+    if (animationCardRef.current) observer.observe(animationCardRef.current);
 
     window.addEventListener('scroll', handleScroll);
     window.addEventListener('mousemove', handleMouseMove);
 
     const timer = window.setTimeout(activateScene, 800);
 
-    return () => {
-      window.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('mousemove', handleMouseMove);
-      observer.disconnect();
-      window.clearTimeout(timer);
-    };
+      return () => {
+        window.removeEventListener('scroll', handleScroll);
+        window.removeEventListener('mousemove', handleMouseMove);
+        observer.disconnect();
+        window.clearTimeout(timer);
+      };
   }, []);
 
   const FADE_TEXT_START = 0;
@@ -134,7 +143,7 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
       >
         {showScene && (
           <Suspense fallback={null}>
-            <LazyScene />
+            <LazyScene playAnimation={playAnimation} />
           </Suspense>
         )}
       </div>
@@ -166,7 +175,7 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
             <div className="w-full h-full">
               {showScene && (
                 <Suspense fallback={null}>
-                  <LazyScene />
+                  <LazyScene playAnimation={playAnimation} />
                 </Suspense>
               )}
             </div>
@@ -196,6 +205,18 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
                 </p>
               }
               note="* Source: INSEE 2024"
+            />
+
+            <InfoCard
+              ref={animationCardRef}
+              title="Animation"
+              visible={moveProgress >= 0.9}
+              body={
+                <p className="text-gray-600">
+                  Placeholder Animation — le modèle 3D se met en mouvement dès que cette carte entre dans le viewport.
+                </p>
+              }
+              note="* Lancement automatique de l&apos;animation Isula.glb"
             />
           </div>
 
