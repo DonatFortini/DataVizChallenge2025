@@ -4,7 +4,7 @@ import { toLambert, toWGS } from './types';
 type XY = [number, number];
 type MultiPolygonXY = XY[][][];
 
-type CartogramOptions = {
+export type CartogramOptions = {
     iterations?: number;
     backgroundValue?: number;
 };
@@ -14,7 +14,7 @@ type PolygonStats = {
     centroid: XY;
 };
 
-type IterationSnapshot = {
+export type IterationSnapshot = {
     stats: Array<{ centroid: XY; radius: number; mass: number }>;
     forceReduction: number;
 };
@@ -76,16 +76,38 @@ function areaAndCentroid(geom: MultiPolygonXY): PolygonStats {
     return { area, centroid: [cx, cy] };
 }
 
-/**
- * Implementation of the Dougenik et al. continuous cartogram algorithm.
- * We use travel-time-derived values for each polygon as weights and iterate
- * a small, fixed number of times to reduce size error while keeping topology.
- */
-export function buildCartogram(
+export function createWarpPoint(iterationHistory: IterationSnapshot[]) {
+    return (coords: [number, number]): [number, number] => {
+        let [px, py] = toLambert(coords);
+        for (const iter of iterationHistory) {
+            let moveX = 0;
+            let moveY = 0;
+            for (const stat of iter.stats) {
+                const dx = px - stat.centroid[0];
+                const dy = py - stat.centroid[1];
+                const dist = Math.hypot(dx, dy) || SAFE_MIN;
+                const dirX = dx / dist;
+                const dirY = dy / dist;
+                const dOverR = dist / stat.radius;
+                const force = dist > stat.radius
+                    ? stat.mass * (stat.radius / dist)
+                    : stat.mass * (dOverR * dOverR) * (4 - 3 * dOverR);
+                moveX += force * dirX;
+                moveY += force * dirY;
+            }
+            px += moveX * iter.forceReduction;
+            py += moveY * iter.forceReduction;
+        }
+        const [lat, lon] = toWGS([px, py]);
+        return [lat, lon];
+    };
+}
+
+export function computeCartogram(
     features: GeoJSONType.Feature<GeoJSONType.MultiPolygon>[],
     values: Record<string, number>,
     options?: CartogramOptions
-): { warpedFeatures: GeoJSONType.Feature<GeoJSONType.MultiPolygon>[]; meanError: number } {
+): { warpedFeatures: GeoJSONType.Feature<GeoJSONType.MultiPolygon>[]; meanError: number; iterationHistory: IterationSnapshot[] } {
     const iterations = options?.iterations ?? 8;
     const backgroundValue = Math.max(options?.backgroundValue ?? 1, SAFE_MIN);
 
@@ -163,30 +185,67 @@ export function buildCartogram(
         geometry: toWGSMultiPolygon(working[idx])
     }));
 
-    const warpPoint = (coords: [number, number]): [number, number] => {
-        let [px, py] = toLambert(coords);
-        for (const iter of iterationHistory) {
-            let moveX = 0;
-            let moveY = 0;
-            for (const stat of iter.stats) {
-                const dx = px - stat.centroid[0];
-                const dy = py - stat.centroid[1];
-                const dist = Math.hypot(dx, dy) || SAFE_MIN;
-                const dirX = dx / dist;
-                const dirY = dy / dist;
-                const dOverR = dist / stat.radius;
-                const force = dist > stat.radius
-                    ? stat.mass * (stat.radius / dist)
-                    : stat.mass * (dOverR * dOverR) * (4 - 3 * dOverR);
-                moveX += force * dirX;
-                moveY += force * dirY;
-            }
-            px += moveX * iter.forceReduction;
-            py += moveY * iter.forceReduction;
-        }
-        const [lat, lon] = toWGS([px, py]);
-        return [lat, lon];
-    };
+    return { warpedFeatures, meanError, iterationHistory };
+}
 
-    return { warpedFeatures, meanError, warpPoint };
+/**
+ * Implementation of the Dougenik et al. continuous cartogram algorithm.
+ * We use travel-time-derived values for each polygon as weights and iterate
+ * a small, fixed number of times to reduce size error while keeping topology.
+ */
+export function buildCartogram(
+    features: GeoJSONType.Feature<GeoJSONType.MultiPolygon>[],
+    values: Record<string, number>,
+    options?: CartogramOptions
+): { warpedFeatures: GeoJSONType.Feature<GeoJSONType.MultiPolygon>[]; meanError: number; warpPoint: (coords: [number, number]) => [number, number] } {
+    const { warpedFeatures, meanError, iterationHistory } = computeCartogram(features, values, options);
+    return { warpedFeatures, meanError, warpPoint: createWarpPoint(iterationHistory) };
+}
+
+type CartogramWorkerRequest = {
+    features: GeoJSONType.Feature<GeoJSONType.MultiPolygon>[];
+    values: Record<string, number>;
+    options?: CartogramOptions;
+};
+
+type CartogramWorkerResult = {
+    warpedFeatures: GeoJSONType.Feature<GeoJSONType.MultiPolygon>[];
+    meanError: number;
+    iterationHistory: IterationSnapshot[];
+};
+
+type CartogramWorkerMessage = { ok: true; result: CartogramWorkerResult } | { ok: false; error?: string };
+
+export function buildCartogramAsync(
+    features: GeoJSONType.Feature<GeoJSONType.MultiPolygon>[],
+    values: Record<string, number>,
+    options?: CartogramOptions
+): Promise<{ warpedFeatures: GeoJSONType.Feature<GeoJSONType.MultiPolygon>[]; meanError: number; warpPoint: (coords: [number, number]) => [number, number] }> {
+    if (typeof Worker === 'undefined') {
+        return Promise.resolve(buildCartogram(features, values, options));
+    }
+
+    return new Promise((resolve, reject) => {
+        const worker = new Worker(new URL('./cartogram.worker.ts', import.meta.url), { type: 'module' });
+        const cleanup = () => worker.terminate();
+
+        worker.onmessage = (event: MessageEvent<CartogramWorkerMessage>) => {
+            const data = event.data;
+            cleanup();
+            if (!data || !data.ok) {
+                reject(new Error(data?.error ?? 'Cartogram worker failed'));
+                return;
+            }
+            const { warpedFeatures, meanError, iterationHistory } = data.result;
+            resolve({ warpedFeatures, meanError, warpPoint: createWarpPoint(iterationHistory) });
+        };
+
+        worker.onerror = err => {
+            cleanup();
+            reject(err instanceof Error ? err : new Error('Cartogram worker error'));
+        };
+
+        const payload: CartogramWorkerRequest = { features, values, options };
+        worker.postMessage(payload);
+    });
 }

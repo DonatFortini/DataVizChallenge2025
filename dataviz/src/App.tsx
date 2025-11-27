@@ -14,7 +14,7 @@ import {
     loadGeoJSON,
 } from './core/engine';
 import { roadDistancesFrom, FALLBACK_DISTANCE_KM } from './core/distance';
-import { buildCartogram } from './core/cartogram';
+import { buildCartogramAsync } from './core/cartogram';
 import {
     ALL_CATEGORY,
     DATASET_KEYS,
@@ -462,7 +462,7 @@ function App() {
                 weights[name] = value;
             });
 
-            const { warpedFeatures, warpPoint } = buildCartogram(features, weights, { iterations: 8, backgroundValue: backgroundWeight });
+            const { warpedFeatures, warpPoint } = await buildCartogramAsync(features, weights, { iterations: 8, backgroundValue: backgroundWeight });
 
             setAnamorphoseState({
                 loading: false,
