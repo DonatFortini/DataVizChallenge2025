@@ -243,7 +243,7 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
                     />
                   </div>
                   <p className="space-y-1 font-mono text-sm text-gray-600 bg-white border border-dashed border-black px-3 py-2 w-full text-center">
-                    Cartogramme pré-calculé : déformation des communes de Corse selon la distance entre leur centroïde et le médecin généraliste le plus proche (WGS84).
+                    Cartogramme pré-calculé : déformation des communes de Corse selon la distance entre leur centroïde et le médecin généraliste le plus proche.
                   </p>
                 </div>
               </div>

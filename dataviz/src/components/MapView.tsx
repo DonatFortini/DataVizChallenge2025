@@ -2,25 +2,60 @@ import { MapContainer, TileLayer, GeoJSON, Marker, LayerGroup, useMapEvents, Too
 import { useEffect } from 'react';
 import L from 'leaflet';
 import type * as GeoJSONType from 'geojson';
-import * as d3 from 'd3';
 
 import { Point } from '../core/types';
 import { FALLBACK_DISTANCE_KM } from '../core/distance';
 
-const DefaultIcon = (color: string) => L.divIcon({
-    className: 'custom-marker',
-    html: `<div style="
-        background:${color};
-        border:2px solid #fff;
-        width:16px;
-        height:16px;
-        border-radius:50%;
-        box-shadow:0 0 0 2px rgba(0,0,0,0.2);"></div>`,
-    iconSize: [16, 16],
-    iconAnchor: [8, 8]
-});
+const MAGMA_STOPS = ['#0b0724', '#2a0a4a', '#561066', '#8f2d69', '#c14954', '#ec6b2f', '#fca926', '#f6d746', '#fbf5a3'];
+const iconCache = new Map<string, L.DivIcon>();
 
-const createColoredIcon = (color: string) => DefaultIcon(color);
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+const hexToRgb = (hex: string): [number, number, number] => {
+    const normalized = hex.replace('#', '');
+    const intValue = parseInt(normalized, 16);
+    return [(intValue >> 16) & 255, (intValue >> 8) & 255, intValue & 255];
+};
+const toHex = (value: number) => value.toString(16).padStart(2, '0');
+const rgbToHex = (r: number, g: number, b: number) => `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+const interpolateMagma = (t: number) => {
+    const clamped = clamp01(t);
+    const scaled = clamped * (MAGMA_STOPS.length - 1);
+    const idx = Math.floor(scaled);
+    const frac = scaled - idx;
+    if (idx >= MAGMA_STOPS.length - 1 || frac === 0) {
+        return MAGMA_STOPS[Math.min(idx, MAGMA_STOPS.length - 1)];
+    }
+    const start = hexToRgb(MAGMA_STOPS[idx]);
+    const end = hexToRgb(MAGMA_STOPS[idx + 1]);
+    const mix = (a: number, b: number) => Math.round(a + (b - a) * frac);
+    return rgbToHex(mix(start[0], end[0]), mix(start[1], end[1]), mix(start[2], end[2]));
+};
+
+const DefaultIcon = (color: string) => iconCache.get(color) ?? (() => {
+    const icon = L.divIcon({
+        className: 'custom-marker',
+        html: `<div style="
+            background:${color};
+            border:2px solid #fff;
+            width:16px;
+            height:16px;
+            border-radius:50%;
+            box-shadow:0 0 0 2px rgba(0,0,0,0.2);"></div>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+    });
+    iconCache.set(color, icon);
+    return icon;
+})();
+
+const createColoredIcon = (color: string) => {
+    const key = color.toLowerCase();
+    const cached = iconCache.get(key);
+    if (cached) return cached;
+    const icon = DefaultIcon(key);
+    iconCache.set(key, icon);
+    return icon;
+};
 
 type ClickHandlerProps = { onSelect: (coords: Point) => void };
 function ClickHandler({ onSelect }: ClickHandlerProps) {
@@ -185,7 +220,7 @@ export function MapView({
                             const t = dur != null && dur < Number.POSITIVE_INFINITY
                                 ? 1 - Math.min(1, Math.max(0, (dur - (anamorphoseLayer.minDuration || 0)) / span))
                                 : 0;
-                            const color = d3.interpolateMagma(t);
+                            const color = interpolateMagma(t);
                             return {
                                 color: '#0f172a',
                                 weight: 1,
