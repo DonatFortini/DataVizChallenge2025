@@ -267,9 +267,9 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
                   </p>
                 </div>
               }
-              note="* Calcul réalisé avec QGIS à partir du DEM fourni par l'IGN. L'animation 3D Isula se joue ici une seule fois."
+              note="* Calcul réalisé avec QGIS à partir du DEM fourni par l'IGN."
             />
-//Donette c'est horrible cette façon de construire les éléments je peux pas croire que c'est ça le gold standard
+            
             <InfoCard
               ref={card2Ref}
               cardId="card2"
@@ -286,7 +286,11 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
 
                 </div>
               }
-              note="¹ Insee dossier complet région de Corse (94) ² Lefèvbre «La population de la Corse», 1957."
+              note={                <>
+                  ¹ Insee dossier complet région de Corse (94)
+                  <br />
+                  ² Lefèvbre «La population de la Corse», 1957.
+                </>}
             />
 
             <InfoCard

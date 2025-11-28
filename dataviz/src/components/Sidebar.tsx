@@ -241,16 +241,16 @@ export function Sidebar({
                     Heatmap
                 </button>
                 <button
-                    className={activeTab === 'anamorphose' ? 'tab active' : 'tab'}
-                    onClick={() => onTabChange('anamorphose')}
-                >
-                    Anamorphose
-                </button>
-                <button
                     className={activeTab === 'profil' ? 'tab active' : 'tab'}
                     onClick={() => onTabChange('profil')}
                 >
                     Parcours d&apos;opportunités
+                </button>
+                <button
+                    className={activeTab === 'anamorphose' ? 'tab active' : 'tab'}
+                    onClick={() => onTabChange('anamorphose')}
+                >
+                    Anamorphose
                 </button>
             </div>
 
