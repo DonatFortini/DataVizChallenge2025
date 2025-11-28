@@ -31,10 +31,12 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
+        working-directory: dataviz
         run: bun install
 
-      - name: Build
-        run: bun run build # uses your existing "build" script
+      - name: Build Vite project
+        working-directory: dataviz
+        run: bun run build
 
       - name: Upload build output
         uses: actions/upload-pages-artifact@v3
@@ -46,9 +48,9 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deploy-pages.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Deploy to GitHub Pages
-        id: deploy-pages
+        id: deployment
         uses: actions/deploy-pages@v4
