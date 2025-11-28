@@ -2,9 +2,9 @@ import { Suspense, useEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { useGLTF, Environment, Resize, useAnimations } from '@react-three/drei';
 import * as THREE from 'three';
+import { assetUrl } from './core/assets';
 
-const BASE_URL = import.meta.env.BASE_URL;
-const MODEL_URL = `${BASE_URL}Isula.glb`;
+const MODEL_URL = assetUrl('Isula.glb');
 
 useGLTF.preload(MODEL_URL);
 

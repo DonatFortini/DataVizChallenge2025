@@ -1,8 +1,8 @@
 import { useState, useEffect, Suspense, useRef, forwardRef, lazy } from 'react';
 import type { ReactNode } from 'react';
+import { assetUrl } from './core/assets';
 
 const LazyScene = lazy(() => import('./IsulaScene'));
-const BASE_URL = import.meta.env.BASE_URL;
 
 type HomeProps = {
   onEnterApp: () => void;
@@ -219,7 +219,7 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
                 <div className="w-full h-full flex flex-col items-center justify-center gap-4 p-6">
                   <div className="w-full h-full bg-[#efefef] border-4 border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,0.9)] flex items-center justify-center overflow-hidden">
                     <img
-                      src={`${BASE_URL}deformation_pop.png`}
+                      src={assetUrl('deformation_pop.png')}
                       alt="Déformation population"
                       className="object-contain w-full h-full mix-blend-multiply contrast-125"
                     />
@@ -237,7 +237,7 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
                 <div className="w-full h-full flex flex-col items-center justify-center gap-4 p-6">
                   <div className="w-full h-full bg-[#efefef] border-4 border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,0.9)] flex items-center justify-center overflow-hidden">
                     <img
-                      src={`${BASE_URL}anamorphe_gene.png`}
+                      src={assetUrl('anamorphe_gene.png')}
                       alt="Cartogramme des distances aux médecins généralistes"
                       className="object-contain w-full h-full mix-blend-multiply contrast-125"
                     />

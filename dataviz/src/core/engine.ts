@@ -4,8 +4,7 @@ import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { communes } from "./communes.data";
 
 import { roadDistancesFrom, FALLBACK_DISTANCE_KM } from "./distance";
-
-const BASE_URL = (import.meta as any).env?.BASE_URL ?? "/";
+import { assetUrl } from "./assets";
 
 const geojsonCache = new Map<string, Promise<any>>();
 
@@ -15,7 +14,7 @@ export async function loadGeoJSON(path: string): Promise<any> {
     if (!geojsonCache.has(path)) {
         geojsonCache.set(
             path,
-            fetch(`${BASE_URL}${path}`).then((response) => {
+            fetch(assetUrl(path)).then((response) => {
                 if (!response.ok) {
                     throw new Error(`Failed to load GeoJSON "${path}" (${response.status})`);
                 }
@@ -120,7 +119,7 @@ export async function ObjectsIn(
         objectsCache.set(
             key,
             (async () => {
-                const response = await fetch(`${BASE_URL}${dataset}.geojson`);
+                const response = await fetch(assetUrl(`${dataset}.geojson`));
                 if (!response.ok) {
                     throw new Error(
                         `Failed to load dataset "${dataset}.geojson" (${response.status})`
