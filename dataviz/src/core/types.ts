@@ -33,7 +33,7 @@ export function ObjectKeyfromProps(nom: string, coordonnees: Coordinates): strin
 type Commune = {
     name: string;
     neighbours: string[];
-    polygon: GeoJSON.MultiPolygon;
+    polygon: GeoJSON.MultiPolygon | GeoJSON.Polygon;
 };
 
 // Coordinates are always stored as [latitude, longitude] in WGS84 unless otherwise noted.

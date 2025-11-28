@@ -76,17 +76,26 @@ const buildMarkerLabel = (datasetKey: DatasetKey, item: QueryObject): string => 
     return segments.join(' — ');
 };
 
-const convertMultiPolygonToWGS = (polygon: GeoJSONType.MultiPolygon): GeoJSONType.MultiPolygon => ({
-    type: 'MultiPolygon',
-    coordinates: polygon.coordinates.map(poly =>
-        poly.map(ring =>
-            ring.map(coord => {
-                const [lat, lon] = toWGS(coord as [number, number]);
-                return [lon, lat];
-            })
+const normalizeToMultiPolygon = (geometry: GeoJSONType.MultiPolygon | GeoJSONType.Polygon): GeoJSONType.MultiPolygon =>
+    geometry.type === 'Polygon'
+        ? { type: 'MultiPolygon', coordinates: [geometry.coordinates] }
+        : geometry;
+
+const convertMultiPolygonToWGS = (geometry: GeoJSONType.MultiPolygon | GeoJSONType.Polygon): GeoJSONType.MultiPolygon => {
+    const polygon = normalizeToMultiPolygon(geometry);
+    return {
+        type: 'MultiPolygon',
+        coordinates: polygon.coordinates.map(poly =>
+            poly.map(ring =>
+                ring.map(coord => {
+                    const [x, y] = coord as [number, number];
+                    const [lat, lon] = toWGS([x, y]);
+                    return [lon, lat];
+                })
+            )
         )
-    )
-});
+    };
+};
 
 const interpolateChannel = (start: number, end: number, t: number) => Math.round(start + (end - start) * t);
 const toHex = (value: number) => value.toString(16).padStart(2, '0');
