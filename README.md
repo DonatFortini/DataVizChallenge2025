@@ -29,6 +29,12 @@ Dans cette application, vous retrouverez :
   - anamorphose générée en fonction des services sélectionnés par l'utilisateur
   - parcours de vie : visualisation des trajets typiques d'un individu selon son lieu de résidence (accès aux services de santé, d'éducation et aux infrastructures sportives)
 
+Certaines fonctionnalités interactives, telles que la génération d'anamorphoses et le parcours de vie peuvent nécessiter un temps de calcul plus long en fonction des données sélectionnées.
+
+## Démonstration
+
+[Accéder à la démonstration interactive](https://donatfortini.github.io/DataVizChallenge2025/)
+
 ## Ressources
 
 - Professionnels de santé — Corse  
