@@ -58,6 +58,10 @@ Certaines fonctionnalités interactives, telles que la génération d'anamorphos
     Données vectorielles détaillées (routes, bâtiments, hydrographie, etc.) pour la Corse.
     Utilisé pour les limites administratives.
 
+- BD ORTHO - IGN
+    [BD ORTHO](https://geoservices.ign.fr/documentation/donnees/ortho/bdortho)
+    Orthophotos utilisées pour draper le mnt et produire le modèle 3d de la carte.
+
 - Leaflet.js  
     [Leaflet — Leaflet](https://leafletjs.com/)  
     Bibliothèque JavaScript open-source pour la création de cartes interactives.
