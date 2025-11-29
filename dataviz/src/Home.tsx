@@ -267,6 +267,10 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
                   <p className="text-gray-600">
                     En fait, si on l&apos;aplatissait complètement, elle gagnerait près de 1000km²*.
                   </p>
+
+                  <p className="text-gray-600">
+                    Ainsi, les distances s'expriment mieux en temps, et deux points éloignés que de quelques kilomètres à vol d'oiseau,peuvent en fait être très éloignés.
+                  </p>
                 </div>
               }
               note="* Calcul réalisé avec QGIS à partir du DEM fourni par l'IGN."
