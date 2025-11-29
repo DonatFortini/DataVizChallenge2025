@@ -33,6 +33,7 @@ type SidebarProps = {
     onRunAnamorphose: () => void;
     anamorphoseLoading: boolean;
     anamorphoseError: string | null;
+    onBackToHome?: () => void;
 };
 
 export function Sidebar({
@@ -58,7 +59,8 @@ export function Sidebar({
     onProfilMarkersChange,
     onRunAnamorphose,
     anamorphoseLoading,
-    anamorphoseError
+    anamorphoseError,
+    onBackToHome
 }: SidebarProps) {
     const headerText = activeTab === 'anamorphose'
         ? 'Cliquez sur la carte pour sélectionner un point et composer l’anamorphose.'
@@ -349,8 +351,18 @@ export function Sidebar({
                     }}
                 />
             )}
-            <footer className="footer">
-                <span>Théo N&apos;Guyen et Donat Fortini — 2025 challenge dataviz</span>
+            <footer className="p-4 border-t-4 border-black bg-gray-50 mt-auto flex flex-col gap-4">
+                <div className="text-xs text-gray-500 text-center">
+                    Théo N&apos;Guyen et Donat Fortini — 2025 challenge dataviz.
+                </div>
+                {onBackToHome && (
+                    <button
+                        onClick={onBackToHome}
+                        className="w-full bg-white text-black px-4 py-3 font-mono font-bold border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[4px] active:shadow-none transition-all flex items-center justify-center gap-2"
+                    >
+                        <span>← Retour au titre</span>
+                    </button>
+                )}
             </footer>
         </div>
     );

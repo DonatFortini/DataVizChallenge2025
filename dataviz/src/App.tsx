@@ -151,7 +151,11 @@ const buildLegendStops = (min: number, max: number, scaleMax: number, quantiles?
     return stops;
 };
 
-function App() {
+type AppProps = {
+    onBackToHome?: () => void;
+};
+
+function App({ onBackToHome }: AppProps) {
     const [base, setBase] = useState<Point | null>(null);
     const [baseLambert, setBaseLambert] = useState<{ x: number; y: number } | null>(null);
     const [commune, setCommune] = useState<Commune | null>(null);
@@ -674,6 +678,7 @@ function App() {
                 onRunAnamorphose={runAnamorphose}
                 anamorphoseLoading={anamorphoseState.loading}
                 anamorphoseError={activeTab === 'anamorphose' ? anamorphoseState.error : null}
+                onBackToHome={onBackToHome}
             />
         </div>
     );

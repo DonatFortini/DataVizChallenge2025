@@ -81,7 +81,7 @@ function Root() {
 
   return (
     <Suspense fallback={<LoadingScreen label="Chargement de l'application..." />}>
-      <App />
+      <App onBackToHome={() => setStage('home')} />
     </Suspense>
   );
 }
