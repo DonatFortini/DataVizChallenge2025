@@ -678,6 +678,7 @@ function App({ onBackToHome }: AppProps) {
                 onRunAnamorphose={runAnamorphose}
                 anamorphoseLoading={anamorphoseState.loading}
                 anamorphoseError={activeTab === 'anamorphose' ? anamorphoseState.error : null}
+                onBackToHome={onBackToHome}
             />
         </div>
     );
