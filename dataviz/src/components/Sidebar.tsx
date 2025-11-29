@@ -368,7 +368,7 @@ function CommuneCard({ commune }: { commune: Commune }) {
     return (
         <div className="commune-card">
             <h2>{commune.name ?? 'Commune'}</h2>
-            <p className="muted">Commune sélectionnée : {commune.name ?? 'N/A'}</p><button onClick={onBackToHome}>
+            <p className="muted">Commune sélectionnée : {commune.name ?? 'N/A'}</p><button onClick={onBackToHome}></button>
         </div>
     );
 }
