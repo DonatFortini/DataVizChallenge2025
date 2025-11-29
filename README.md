@@ -1,55 +1,41 @@
-# DataViz 2025 — Rappel du challenge
+# DataViz Challenge 2025
 
-## Article 2 — Objet du concours
+## règlement du concours
 
 L’objectif de ce concours est de réaliser, en temps contraint, une visualisation qui mette en valeur un jeu de données en libre accès ou fourni par les organisateurs.
-
-### Thématiques proposées
-
-Les candidats peuvent choisir une des thématiques suivantes :
-
-- Bien-être du territoire (bien‑être environnemental, bien‑être des populations, bien vieillir…)
-- Valorisation des politiques publiques
-- Portrait de territoires (géographie, population, infrastructures numériques, sports, scolarité, qualité de vie)
-
-Les participants peuvent aussi proposer un sujet libre de leur choix.
-
-### Prix
-
-Le concours attribuera 3 prix :
-
-- EDF
-- Qualitair
-- CorsicaFibra
 
 ### Les jeux de données
 
 Attention: les donnée doivent provenir d'une source ouverte.
 
-### Idée: La corse pour vous
+## Équipe DT-Viz
 
-Une carte de la corse avec les déformations, avec comment on vit l'île selon là où on est
+- **Théo N'gyuen Van Hoan** — Doctorant en informatique (3ᵉ année), UMR LISA  
+    [GitHub](https://github.com/Orsucciu)
+- **Donat Fortini** — Doctorant en informatique (1ʳᵉ année), UMR LISA
 
-Avec un petit texte de présentation,
-Une carte de la corse en 3d...
-...Qui s'aplatit pour montrer la réalité des distances dans un endroit montagneux
+## Notre proposition
 
-Puis ensuite, par commune (village?) une carte isochrone de la corse pour des "choses de la vie" qu'on trouvait importantes
+Nous proposons une visualisation interactive des services de santé, d'éducation et des infrastructures sportives en Corse. Cette cartographie intègre des données géographiques et des fonctionnalités de calcul d'itinéraires pour offrir une vue d'ensemble des ressources disponibles et mettre en évidence les disparités territoriales d'accès à ces services.
 
-- Ecoles
-- Crèches
-- Hopitaux
-- Lieux de "sport"
-- Peut-être mer/montagne
-- Commerce alimentaire ?
+La géographie montagneuse de la Corse et la répartition dispersée de sa population créent des défis spécifiques d'accessibilité. En visualisant la répartition des services et les temps de transport associés, nous souhaitons illustrer ces enjeux territoriaux.
 
-### Défis
+Dans cette application, vous retrouverez :
 
-Générer une carte de la Corse en 3d
-L'aplitir
-Faire des cartes isochrones "à la volée"
+- partie introductive expliquant le contexte de la visualisation
 
-### Ressources
+- carte interactive affichant les services de santé, d'éducation et les infrastructures sportives selon trois visualisations :
+  - heatmap de la répartition des services
+  - anamorphose générée en fonction des services sélectionnés par l'utilisateur
+  - parcours de vie : visualisation des trajets typiques d'un individu selon son lieu de résidence (accès aux services de santé, d'éducation et aux infrastructures sportives)
+
+Certaines fonctionnalités interactives, telles que la génération d'anamorphoses et le parcours de vie peuvent nécessiter un temps de calcul plus long en fonction des données sélectionnées.
+
+## Démonstration
+
+[Accéder à la démonstration interactive](https://donatfortini.github.io/DataVizChallenge2025/)
+
+## Ressources
 
 - Professionnels de santé — Corse  
     [Annuaire des professionnels de santé (localisation et tarifs) — data.corsica](https://www.data.corsica/explore/dataset/annuaire-sante-liste-localisation-et-tarifs-des-professionnels-de-sante2/information/)  
@@ -71,6 +57,10 @@ Faire des cartes isochrones "à la volée"
     [BD TOPO® — géoservices IGN](https://geoservices.ign.fr/bdtopo)
     Données vectorielles détaillées (routes, bâtiments, hydrographie, etc.) pour la Corse.
     Utilisé pour les limites administratives.
+
+- BD ORTHO - IGN
+    [BD ORTHO](https://geoservices.ign.fr/documentation/donnees/ortho/bdortho)
+    Orthophotos utilisées pour draper le mnt et produire le modèle 3d de la carte.
 
 - Leaflet.js  
     [Leaflet — Leaflet](https://leafletjs.com/)  

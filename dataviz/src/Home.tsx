@@ -283,7 +283,7 @@ export function Home({ onEnterApp, prefetching = false, ready = false }: HomePro
                     Avec environ 350 000 habitants en 2022¹, il y a eu une véritable explosion démographique depuis les deux guerres mondiales, qui avaient laissé la Corse exsangue: sa population passant de 290.000 habitants² en 1911 à 187.000 en 1936.
                   </p>
                   <p className="text-gray-600">
-                    Cette explosion a pris place inégalement dans le territoire, avec des communes presques entièrement vidées de leurs habitants, tandis que le reste de la population et des activités se sont concentrés dans quelques pôles urbains.
+                    Cette explosion a pris place inégalement dans le territoire, avec des communes presque entièrement vidées de leurs habitants, tandis que le reste de la population et des activités se sont concentrés dans quelques pôles urbains.
                   </p>
 
                 </div>
